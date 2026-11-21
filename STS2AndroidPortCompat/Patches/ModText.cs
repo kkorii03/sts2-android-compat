@@ -99,6 +99,10 @@ internal static class ModText
         ["No rotation"] = "회전 안 함",
         ["180°"] = "180° 회전",
         ["Portrait (requires portrait UI MOD)"] = "세로 화면 (세로 UI 모드 필요)",
+        ["Touch"] = "터치",
+        ["Battery saver (60 Hz)"] = "배터리 절약 (60Hz)",
+        ["Developer options"] = "개발자 옵션",
+        ["Developer mode"] = "개발자 모드",
 
         // Fallback settings row (ExternalSettingsPatches)
         ["OPEN"] = "열기",

@@ -53,6 +53,7 @@ internal sealed class RenderReplicaWarmup : IDisposable
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 MouseFilter = Control.MouseFilterEnum.Ignore,
+                Visible = NativeFeel.ShowPortUi,
             };
             label.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
             _layer.AddChild(label);

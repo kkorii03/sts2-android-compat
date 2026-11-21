@@ -258,6 +258,31 @@ public partial class AndroidStartupLoadingScreen : Control
             MouseFilter = MouseFilterEnum.Ignore,
         };
         vbox.AddChild(hintLabel);
+
+        if (!NativeFeel.ShowPortUi)
+            ApplyNativeLook(progressOuter, hintLabel);
+    }
+
+    // A native release shows no optimisation/diagnostic text: plain black screen with a
+    // thin, quiet progress bar. The status labels keep receiving text (for developer
+    // mode and logs) but stay hidden.
+    private void ApplyNativeLook(PanelContainer progressOuter, Label hintLabel)
+    {
+        foreach (var name in new[] { "TopAccent", "BottomAccent" })
+        {
+            if (GetNodeOrNull<CanvasItem>(name) is { } accent)
+                accent.Visible = false;
+        }
+        if (GetNodeOrNull<ColorRect>("Background") is { } background)
+            background.Color = Colors.Black;
+        _titleLabel.Visible = false;
+        _detailsLabel.Visible = false;
+        hintLabel.Visible = false;
+        progressOuter.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+        _progressFrame.CustomMinimumSize = new Vector2(480, 4);
+        _progressFrame.Color = new Color(1f, 1f, 1f, 0.12f);
+        _progressFill.OffsetBottom = 4f;
+        _progressFill.Color = new Color(0.91f, 0.86f, 0.75f, 0.7f);
     }
 
     private async Task EnsureScreenIsVisibleAsync()

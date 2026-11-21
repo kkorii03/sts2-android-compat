@@ -35,7 +35,8 @@ public static class QuickRestartPatches
         {
             if (!OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase))
                 return;
-            if (!AndroidSettingsBridge.GetBool("quick_sl_enabled", true))
+            // Save-scum retry is a mod feature, not something the mobile release has.
+            if (!NativeFeel.DeveloperMode || !AndroidSettingsBridge.GetBool("quick_sl_enabled", true))
                 return;
             if (RunManager.Instance.NetService.Type != NetGameType.Singleplayer)
                 return;

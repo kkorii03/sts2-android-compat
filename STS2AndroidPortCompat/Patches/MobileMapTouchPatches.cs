@@ -24,7 +24,7 @@ public static class MobileMapTouchPatches
 {
     private const string SettingKey = "mobile_map_touch";
     private const float DragSlop = 24f;
-    private const float TapAssistPadding = 48f;
+    private const float TapAssistPadding = 36f;
     private const ulong TapMaxDurationUsec = 600_000;
     private const ulong VelocityWindowUsec = 100_000;
     private const ulong VelocityStaleUsec = 80_000;
@@ -120,9 +120,11 @@ public static class MobileMapTouchPatches
                     if (OnMotion(__instance, motion))
                         __instance.GetViewport()?.SetInputAsHandled();
                     break;
-                case InputEventScreenTouch { Pressed: false } when Current.Confirmed:
+                case InputEventScreenTouch { Pressed: false } when Current.Confirmed && !Input.IsMouseButtonPressed(MouseButton.Left):
                     // Godot dispatches the emulated mouse release before the touch release,
                     // so a confirmed gesture here means something upstream ate that release.
+                    // While the emulated button is still down, a second finger lifted: the
+                    // gesture still belongs to the first finger.
                     AbandonGesture();
                     break;
             }
@@ -175,9 +177,31 @@ public static class MobileMapTouchPatches
 
     private static void AbandonGesture()
     {
-        if (Current.DraggingFlagSet && Current.Screen != null && GodotObject.IsInstanceValid(Current.Screen))
-            _isDragging(Current.Screen) = false;
+        var screen = Current.Screen;
+        if (screen != null && GodotObject.IsInstanceValid(screen))
+        {
+            if (Current.DraggingFlagSet)
+                _isDragging(screen) = false;
+            // A drag never selects: a late release must not travel to the start node.
+            if (Current.Scrolling || Current.CaughtFling)
+                ClearPressedPoints(screen);
+        }
         Current.Reset();
+    }
+
+    // Input-mode change or app pause/focus loss: drop the gesture and any fling.
+    public static void Reset()
+    {
+        try
+        {
+            AbandonGesture();
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Mobile map touch reset failed: {exception.Message}");
+            Current.Reset();
+        }
+        StopFling();
     }
 
     private static void OnPress(NMapScreen screen, InputEventMouseButton button)
@@ -311,6 +335,8 @@ public static class MobileMapTouchPatches
         var points = _mapPoints(screen);
         if (points == null)
             return;
+        // Nearest visible point of any kind; assist only when that nearest one is
+        // reachable, so a tap meant for a closer unreachable node never travels.
         NMapPoint best = null;
         var bestDistance = TapAssistPadding;
         foreach (var point in points.Values)
@@ -320,13 +346,13 @@ public static class MobileMapTouchPatches
             var distance = DistanceToRect(ScreenRect(point), position);
             if (distance <= 0f)
                 return; // Inside a point that Godot did not route the press to: leave it alone.
-            if (point.IsEnabled && distance < bestDistance)
+            if (distance < bestDistance)
             {
                 best = point;
                 bestDistance = distance;
             }
         }
-        if (best == null)
+        if (best == null || !best.IsEnabled)
             return;
         PatchHelper.Log($"Map tap assist: selecting {best.Point?.coord} ({bestDistance:0}px from tap).");
         // ForceClick runs NMapPoint.OnRelease, which keeps every vanilla travel check.

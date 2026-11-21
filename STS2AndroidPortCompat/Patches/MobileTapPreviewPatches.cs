@@ -17,6 +17,7 @@ using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
+using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Vfx;
 using MegaCrit.Sts2.Core.Runs;
 using STS2Mobile.Android;
@@ -434,10 +435,13 @@ public static class MobileTapPreviewPatches
     {
         try
         {
+            // The map, modals and inspect screens are not overlays but still cover
+            // the hand; vanilla NPlayerHand._UnhandledInput uses the same context gate.
             return CombatManager.Instance.IsInProgress
                 && !CombatManager.Instance.IsOverOrEnding
                 && NCombatRoom.Instance != null
-                && NOverlayStack.Instance.ScreenCount <= 0;
+                && NOverlayStack.Instance.ScreenCount <= 0
+                && ActiveScreenContext.Instance.IsCurrent(NCombatRoom.Instance);
         }
         catch
         {
@@ -709,8 +713,10 @@ public static class MobileTapPreviewPatches
     {
         if (!IsTapPreviewEnabled() || hand.CurrentMode != NPlayerHand.Mode.Play || hand.PeekButton.IsPeeking || hand.InCardPlay || !AreCardActionsAllowed(hand))
             return false;
-        if (!IsPress(input) || !TryGetTapPosition(input, out var position))
+        // Only the emulated mouse press (first finger); a second finger's touch press is not a tap.
+        if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } press)
             return false;
+        var position = press.Position;
         if (!States.TryGetValue(hand, out var state) || state.PinnedHolder is not NHandCardHolder holder || !IsSameValidHolder(holder, holder) || hand.IsAwaitingPlay(holder) || !ShouldPlayPinnedCardOnTap(holder.CardNode?.Model))
             return false;
         if (position.Y >= hand.GetViewport().GetVisibleRect().Size.Y * 0.75f)

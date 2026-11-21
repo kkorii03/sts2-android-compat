@@ -17,6 +17,7 @@ internal static class Program
         IntentAnimationPatches.Apply(harmony);
         TouchInputPatches.Apply(harmony);
         MobileTapPreviewPatches.Apply(harmony);
+        MobileHandScrubPatches.Apply(harmony);
         MobileSelectionConfirmationPatches.Apply(harmony);
         MerchantSelectionConfirmationPatches.Apply(harmony);
         OS.MobileFeature = true;
@@ -24,6 +25,7 @@ internal static class Program
         IntentTransitions();
         InputTransitions();
         ConsumerPolicyTests.Run();
+        HandContextTests.Run();
         CursorRecoveryTests.Run();
         Console.WriteLine("PASS: tooltip/intent hot paths and consumer-visible touch, hardware, desktop and input-mode reset boundaries.");
     }

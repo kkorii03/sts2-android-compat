@@ -74,11 +74,11 @@ public static class ExternalSettingsPatches
             line.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             line.AddThemeConstantOverride("separation", 16);
 
-            var label = new Label { Name = "Label", Text = "Android companion settings" };
+            var label = new Label { Name = "Label", Text = ModText.Ko("Android companion settings") };
             label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             label.VerticalAlignment = VerticalAlignment.Center;
 
-            var button = new Button { Name = "Button", Text = "OPEN" };
+            var button = new Button { Name = "Button", Text = ModText.Ko("OPEN") };
             button.Pressed += () =>
             {
                 if (!OpenCompanionSettings())
@@ -103,10 +103,10 @@ public static class ExternalSettingsPatches
             var content = GetSettingsContent(__instance);
             var label = content?.GetNodeOrNull<Label>("AndroidExternalSettings/Label");
             if (label != null)
-                label.Text = "Android companion settings";
+                label.Text = ModText.Ko("Android companion settings");
             var button = content?.GetNodeOrNull<Button>("AndroidExternalSettings/Button");
             if (button != null)
-                button.Text = "OPEN";
+                button.Text = ModText.Ko("OPEN");
         }
         catch
         {

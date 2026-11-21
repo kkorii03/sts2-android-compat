@@ -200,6 +200,8 @@ public static class MobileInputPolicyPatches
     {
         TouchInputPatches.ResetForInputModeChange();
         MobileTapPreviewPatches.ResetForInputModeChange();
+        MobileHandScrubPatches.Reset();
+        MobileMapTouchPatches.Reset();
         MobileSelectionConfirmationPatches.ResetForInputModeChange();
         MerchantSelectionConfirmationPatches.ResetForInputModeChange();
         MobileTooltipPatches.ResetForInputModeChange();

@@ -71,9 +71,31 @@ namespace Godot
         public MouseFilterEnum MouseFilter;
         public Vector2 Size = new(100, 100);
         public bool IsVisibleInTree() => Valid && Visible;
-        public Transform2D GetGlobalTransformWithCanvas() => new() { Origin = Position, Scale = new Vector2(1, 1) };
+        public float Rotation;
+        public Transform2D GetGlobalTransformWithCanvas() => new(Rotation, Position);
     }
-    public struct Transform2D { public Vector2 Origin, Scale; }
+    public struct Transform2D
+    {
+        public Vector2 X, Y, Origin;
+        public Transform2D(float rotation, Vector2 origin)
+        {
+            X = new Vector2(MathF.Cos(rotation), MathF.Sin(rotation));
+            Y = new Vector2(-MathF.Sin(rotation), MathF.Cos(rotation));
+            Origin = origin;
+        }
+        public Vector2 Scale => new(MathF.Sqrt(X.X * X.X + X.Y * X.Y), MathF.Sign(Determinant()) * MathF.Sqrt(Y.X * Y.X + Y.Y * Y.Y));
+        public float Determinant() => X.X * Y.Y - X.Y * Y.X;
+        public Transform2D AffineInverse()
+        {
+            var det = Determinant();
+            var inverse = new Transform2D { X = new Vector2(Y.Y / det, -X.Y / det), Y = new Vector2(-Y.X / det, X.X / det) };
+            var origin = inverse * Origin;
+            inverse.Origin = new Vector2(-origin.X, -origin.Y);
+            return inverse;
+        }
+        public static Vector2 operator *(Transform2D t, Vector2 v) =>
+            new(t.X.X * v.X + t.Y.X * v.Y + t.Origin.X, t.X.Y * v.X + t.Y.Y * v.Y + t.Origin.Y);
+    }
     public static class Engine
     {
         public static ulong Frames;
@@ -144,6 +166,8 @@ namespace Godot
         public static float PosMod(float value, float modulus) => (value % modulus + modulus) % modulus;
         public static float Abs(float value) => MathF.Abs(value);
         public static float Max(float a, float b) => MathF.Max(a, b);
+        public static float Min(float a, float b) => MathF.Min(a, b);
+        public static bool IsZeroApprox(float value) => MathF.Abs(value) < 1e-6f;
         public static float Sqrt(float value) => MathF.Sqrt(value);
     }
     public static class Time
@@ -197,9 +221,9 @@ namespace Godot
     }
     public enum MouseButton { Left, Right }
     public class InputEventMouseButton : InputEvent { public MouseButton ButtonIndex; public bool Pressed; public bool Canceled; public Vector2 Position; }
-    public class InputEventScreenTouch : InputEvent { public bool Pressed; public Vector2 Position; }
+    public class InputEventScreenTouch : InputEvent { public int Index; public bool Pressed; public bool Canceled; public Vector2 Position; }
     public class InputEventMouseMotion : InputEvent { public Vector2 Position; }
-    public class InputEventScreenDrag : InputEvent { public Vector2 Position; }
+    public class InputEventScreenDrag : InputEvent { public int Index; public Vector2 Position; }
 }
 namespace MegaCrit.Sts2.Core.Nodes
 {
@@ -374,6 +398,7 @@ namespace STS2Mobile.Android
         public static string Mode = "immediate";
         public static string RetapAction = "put_down";
         public static bool TouchPreviewEnabled = true;
+        public static bool TapGuardEnabled = true;
         public static bool SelectionConfirmationEnabled = true;
         public static int Reads;
         public static string GetString(string key, string fallback) { Reads++; return key == "touch_lift_retap_action" ? RetapAction : Mode; }
@@ -384,6 +409,7 @@ namespace STS2Mobile.Android
             return key switch
             {
                 "touch_lift_preview" => TouchPreviewEnabled,
+                "touch_tap_guard" => TapGuardEnabled,
                 "mobile_selection_confirmation" => SelectionConfirmationEnabled,
                 _ => fallback,
             };

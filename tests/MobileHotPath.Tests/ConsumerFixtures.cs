@@ -132,6 +132,7 @@ namespace MegaCrit.Sts2.Core.Nodes.GodotExtensions
 {
     public class NClickableControl : Control
     {
+        public bool IsEnabled = true;
         public new static class SignalName
         {
             public const string MouseReleased = "mouse-released";
@@ -218,11 +219,22 @@ namespace MegaCrit.Sts2.Core.Nodes.Combat
 }
 namespace MegaCrit.Sts2.Core.Nodes.Rooms
 {
-    public class NCombatRoom : Node
+    public class NCombatRoom : Node, MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext.IScreenContext
     {
         public static readonly NCombatRoom Instance = new();
         public readonly MegaCrit.Sts2.Core.Nodes.Vfx.CombatVfxContainer CombatVfxContainer = new();
         public readonly List<MegaCrit.Sts2.Core.Nodes.Combat.NCreature> CreatureNodes = new();
+    }
+}
+namespace MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext
+{
+    public interface IScreenContext { }
+    // Null Current means the combat room is the current context.
+    public class ActiveScreenContext
+    {
+        public static readonly ActiveScreenContext Instance = new();
+        public IScreenContext Current;
+        public bool IsCurrent(IScreenContext screen) => ReferenceEquals(screen, Current ?? MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.Instance);
     }
 }
 namespace MegaCrit.Sts2.Core.Nodes.Screens.Overlays

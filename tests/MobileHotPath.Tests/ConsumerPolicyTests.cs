@@ -27,6 +27,7 @@ internal static class ConsumerPolicyTests
         PreviewPointerOwnershipAndReset();
         RejectedPreviewPlayZoneTap();
         RejectedPreviewRetap();
+        GuardedTapsAndTargetAssist();
         RewardConfirmationAndReset();
         MerchantConfirmationAndReset();
         MerchantProductPurchases();
@@ -157,7 +158,11 @@ internal static class ConsumerPolicyTests
         NGame.Instance._Input(new InputEventMouseButton { Pressed = true, ButtonIndex = MouseButton.Left, Position = new Vector2(300, 100) });
         Require(holder.CardModel.ManualPlays == 0, "hardware press cannot play a pinned touch card");
         NGame.Instance._Input(new InputEventScreenTouch { Pressed = true, Position = new Vector2(300, 100) });
-        Require(holder.CardModel.ManualPlays == 1, "touch play-zone tap retains existing manual play behavior");
+        Require(holder.CardModel.ManualPlays == 0, "a touch play-zone press alone never plays the pinned card");
+        TouchTap(new Vector2(300, 100), holdMsec: 600);
+        Require(holder.CardModel.ManualPlays == 0 && MobileTapPreviewPatches.IsPinned(holder), "a play-zone long-press only reads and keeps the pin");
+        TouchTap(new Vector2(300, 100));
+        Require(holder.CardModel.ManualPlays == 1, "a short play-zone tap plays the pinned card on release");
 
         hand = NewHand(out holder);
         hand.OnHolderPressed(holder);
@@ -180,8 +185,8 @@ internal static class ConsumerPolicyTests
         card.Energy = 0;
         card.TargetType = MegaCrit.Sts2.Core.Entities.Cards.TargetType.Self;
         hand.OnHolderPressed(holder);
-        var tap = new InputEventScreenTouch { Pressed = true, Position = new Vector2(300, 100) };
-        NGame.Instance._Input(tap);
+        var tapPosition = new Vector2(300, 100);
+        TouchTap(tapPosition);
         Require(card.ManualPlays == 0 && card.Energy == 0 && !hand.InCardPlay,
             "an unaffordable skill never spends energy or enters card play");
         Require(MobileTapPreviewPatches.GetPinnedHolder(hand) == null && hand.FocusedHolder == null && !holder.IsFocused,
@@ -191,15 +196,15 @@ internal static class ConsumerPolicyTests
             "a rejected skill shows the same resource failure dialogue over its owner as dragging");
         holder.SetMouseHovered(true);
         hand.OnHolderFocused(holder);
-        NGame.Instance._Input(new InputEventScreenTouch { Pressed = false, Position = tap.Position });
+        NGame.Instance._Input(new InputEventScreenTouch { Pressed = false, Position = tapPosition });
         NGame.Instance._Input(new InputEventScreenDrag { Position = new Vector2(0, -80) });
-        NGame.Instance._Input(tap);
+        TouchTap(tapPosition);
         Require(!holder.IsFocused && hand.FocusedHolder == null && MobileTapPreviewPatches.GetPinnedHolder(hand) == null
             && card.ManualPlayAttempts == 1 && hand.CardPlays == 0,
             "hover, release, stale drag and another screen tap cannot relift or retry a rejected card");
         card.Energy = 1;
         hand.OnHolderPressed(holder);
-        NGame.Instance._Input(tap);
+        TouchTap(tapPosition);
         Require(card.ManualPlays == 1 && card.Energy == 0 && MobileTapPreviewPatches.GetPinnedHolder(hand) == null,
             "explicitly selecting the card again after gaining energy permits one normal play");
     }
@@ -534,6 +539,62 @@ internal static class ConsumerPolicyTests
         Require(target.Cancelled, "native touch release retains untargeted cancellation");
         TouchInputPatches.ResetForInputModeChange();
         Require(!TouchInputPatches.ConsumeCancelledByUntargetedRelease(target), "release reset drops stale cancellation metadata");
+    }
+
+    private static void GuardedTapsAndTargetAssist()
+    {
+        var hand = NewHand(out var holder);
+        hand.OnHolderPressed(holder);
+        NGame.Instance._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = true, Position = new Vector2(300, 100) });
+        Engine.Frames++;
+        NGame.Instance._Input(new InputEventScreenTouch { Pressed = true, Position = new Vector2(600, 100) });
+        NGame.Instance._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = false, Position = new Vector2(300, 100) });
+        Require(holder.CardModel.ManualPlays == 0 && MobileTapPreviewPatches.IsPinned(holder), "a second finger turns a pending play-zone tap into a non-play gesture");
+        TouchTap(new Vector2(300, 100), moveTo: new Vector2(300, 160));
+        Require(holder.CardModel.ManualPlays == 0 && MobileTapPreviewPatches.IsPinned(holder), "a tap that slides past the slop never plays");
+
+        hand = NewHand(out holder);
+        holder.CardModel.TargetType = MegaCrit.Sts2.Core.Entities.Cards.TargetType.AnyEnemy;
+        var room = MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom.Instance;
+        var enemy = new NCreature { Position = new Vector2(400, 100) };
+        enemy.Entity.Side = 1;
+        enemy.Hitbox.Position = enemy.Position;
+        room.CreatureNodes.Add(enemy);
+        try
+        {
+            var targets = NTargetManager.Instance;
+            hand.OnHolderPressed(holder);
+            targets.HoveredNode = null;
+            targets.IsInSelection = true; // Fixture StartCardPlay does not open targeting itself.
+            TouchTap(new Vector2(300, 100));
+            Require(hand.CardPlays == 0 && targets.HoveredNode == null, "a targeted card ignores taps beyond the assist radius");
+            TouchTap(new Vector2(350, 150));
+            Require(hand.CardPlays == 1 && ReferenceEquals(targets.HoveredNode, enemy) && targets.Finishes > 0 && !targets.Cancelled,
+                "a near-miss tap targets the nearest enemy through the vanilla targeting path");
+            targets.IsInSelection = false;
+
+            var manager = new NTargetManager { Mode = TargetMode.ClickMouseToTarget, IsInSelection = true };
+            manager._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = true });
+            Time.Msec += 600;
+            manager._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = false });
+            Require(manager.Finishes == 0 && manager.IsInSelection, "a long-press release never picks a click-to-target target");
+            manager._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = true });
+            Time.Msec += 50;
+            manager._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = false });
+            Require(manager.Finishes == 1, "a quick tap still finishes click-to-target");
+        }
+        finally
+        {
+            room.CreatureNodes.Clear();
+            NTargetManager.Instance.IsInSelection = false;
+        }
+    }
+
+    private static void TouchTap(Vector2 position, ulong holdMsec = 50, Vector2? moveTo = null)
+    {
+        NGame.Instance._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = true, Position = position });
+        Time.Msec += holdMsec;
+        NGame.Instance._Input(new InputEventMouseButton { Device = -1, ButtonIndex = MouseButton.Left, Pressed = false, Position = moveTo ?? position });
     }
 
     private static NPlayerHand NewHand(out NHandCardHolder holder)

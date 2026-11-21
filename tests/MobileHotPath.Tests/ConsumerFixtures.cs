@@ -62,6 +62,7 @@ namespace MegaCrit.Sts2.Core.Entities.Creatures
     public class Creature
     {
         public bool IsAlive = true;
+        public bool IsHittable = true;
         public bool IsPlayer;
         public Player Player;
         public int Side;
@@ -221,6 +222,7 @@ namespace MegaCrit.Sts2.Core.Nodes.Rooms
     {
         public static readonly NCombatRoom Instance = new();
         public readonly MegaCrit.Sts2.Core.Nodes.Vfx.CombatVfxContainer CombatVfxContainer = new();
+        public readonly List<MegaCrit.Sts2.Core.Nodes.Combat.NCreature> CreatureNodes = new();
     }
 }
 namespace MegaCrit.Sts2.Core.Nodes.Screens.Overlays

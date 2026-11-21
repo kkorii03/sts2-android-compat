@@ -26,6 +26,20 @@ namespace STS2Mobile.Patches;
 public static class MobileTapPreviewPatches
 {
     private const float DirectDragThreshold = 30f;
+    // Guarded play-zone tap: decided on release, never on press. A hold this long
+    // is a long-press (read info), not a tap; same floor as the tooltip long-press.
+    private const ulong TapMaxDurationUsec = 500_000;
+    private const float TapSlop = 30f;
+    // A press on an NClickableControl at least this share of the screen is a
+    // backdrop, not a button, and does not block the tap.
+    private const float ClaimMaxScreenShare = 0.25f;
+    // Enemy tap assist radius as a share of the visible height (~76 px at 1080p,
+    // about 5 mm on a phone), so it follows the UI scale instead of raw pixels.
+    private const float TargetAssistScreenFraction = 0.07f;
+    private static readonly GuardedTap PendingTap = new();
+    private static ulong _lastTargetPressUsec;
+    private static readonly MethodInfo FinishTargetingMethod = AccessTools.Method(typeof(NTargetManager), "FinishTargeting", new[] { typeof(bool) });
+    private static readonly FieldInfo TargetModeField = AccessTools.Field(typeof(NTargetManager), "_targetMode");
     private static readonly ConditionalWeakTable<NPlayerHand, PreviewState> States = new();
     private static readonly ConditionalWeakTable<NCardHolder, PinnedState> PinnedHolders = new();
     private static readonly ConditionalWeakTable<NCardHolder, SuppressedHoverState> SuppressedHolders = new();
@@ -47,6 +61,8 @@ public static class MobileTapPreviewPatches
         PatchHelper.Patch(harmony, typeof(NCardHolder), "RefreshFocusState", prefix: PatchHelper.Method(typeof(MobileTapPreviewPatches), nameof(CardHolderRefreshFocusStatePrefix)));
         PatchHelper.Patch(harmony, typeof(NHandCardHolder), "_Ready", postfix: PatchHelper.Method(typeof(MobileTapPreviewPatches), nameof(HandHolderReadyPostfix)));
         PatchHelper.Patch(harmony, typeof(NCreature), "_Ready", postfix: PatchHelper.Method(typeof(MobileTapPreviewPatches), nameof(CreatureReadyPostfix)));
+        PatchHelper.Patch(harmony, typeof(NClickableControl), "_GuiInput", prefix: PatchHelper.Method(typeof(MobileTapPreviewPatches), nameof(ClickableGuiInputPrefix)));
+        PatchHelper.Patch(harmony, typeof(NTargetManager), "_Input", prefix: PatchHelper.Method(typeof(MobileTapPreviewPatches), nameof(TargetManagerInputPrefix)));
     }
 
     public static bool GameInputPrefix(NGame __instance, InputEvent inputEvent)
@@ -57,8 +73,17 @@ public static class MobileTapPreviewPatches
                 return true;
             var hand = NPlayerHand.Instance;
             if (hand == null || !IsCombatInputActive())
+            {
+                PendingTap.Reset();
                 return true;
-            if (HandleMobileTapPreviewDirectDrag(hand, inputEvent) || HandlePendingPutDownRelease(hand, inputEvent) || HandleMobilePinnedCardPlayZoneTap(hand, inputEvent))
+            }
+            var isButton = inputEvent is InputEventMouseButton or InputEventScreenTouch;
+            var guarded = isButton && IsTapGuardEnabled();
+            if (guarded)
+                TrackGuardedTap(hand, inputEvent);
+            else if (isButton)
+                PendingTap.Reset();
+            if (HandleMobileTapPreviewDirectDrag(hand, inputEvent) || HandlePendingPutDownRelease(hand, inputEvent) || (!guarded && HandleMobilePinnedCardPlayZoneTap(hand, inputEvent)))
             {
                 __instance.GetViewport()?.SetInputAsHandled();
                 return false;
@@ -219,6 +244,62 @@ public static class MobileTapPreviewPatches
         }
     }
 
+    // GUI phase of the press that opened a guarded tap: Godot's own hit test routed
+    // it to a button/potion/relic/hand card, so the release belongs to that control.
+    public static void ClickableGuiInputPrefix(NClickableControl __instance, InputEvent inputEvent)
+    {
+        try
+        {
+            if (!PendingTap.Active || PendingTap.Claimed || PendingTap.Frame != Engine.GetProcessFrames())
+                return;
+            if (inputEvent is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } || !MobileInputPolicyPatches.IsTouchPointerEvent(inputEvent))
+                return;
+            var size = __instance.GetGlobalRect().Size;
+            var screen = __instance.GetViewport().GetVisibleRect().Size;
+            if (Mathf.Abs(size.X * size.Y) >= screen.X * screen.Y * ClaimMaxScreenShare)
+                return;
+            PendingTap.Claimed = true;
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Guarded tap claim check failed: {exception.Message}");
+            PendingTap.Claimed = true;
+        }
+    }
+
+    // Long-press rule for click-to-target (card tapped onto an enemy, potions):
+    // a release after a hold never picks a target. Targeting stays open, so the
+    // next quick tap on a creature still targets it and a tap elsewhere cancels.
+    public static bool TargetManagerInputPrefix(NTargetManager __instance, InputEvent inputEvent)
+    {
+        try
+        {
+            if (inputEvent is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button
+                || !MobileInputPolicyPatches.UseTouchControls || !MobileInputPolicyPatches.IsTouchPointerEvent(button))
+                return true;
+            var now = Time.GetTicksUsec();
+            if (button.Pressed)
+            {
+                _lastTargetPressUsec = now;
+                return true;
+            }
+            // Not tied to touch_lift_preview: potion targeting needs the guard too.
+            if (!__instance.IsInSelection || TargetModeField?.GetValue(__instance) is not TargetMode.ClickMouseToTarget
+                || !AndroidSettingsBridge.GetBool("touch_tap_guard", true))
+                return true;
+            // A cancelled touch (system gesture, palm) is not a tap either.
+            if (!button.Canceled && (_lastTargetPressUsec == 0 || now - _lastTargetPressUsec < TapMaxDurationUsec))
+                return true;
+            PatchHelper.Log(button.Canceled ? "Cancelled touch release ignored while targeting." : "Long-press release ignored while targeting.");
+            return false;
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Targeting long-press guard failed: {exception.Message}");
+            return true;
+        }
+    }
+
     public static void RepinAfterCancelledCardPlay(NHandCardHolder holder)
     {
         try
@@ -252,6 +333,8 @@ public static class MobileTapPreviewPatches
 
     public static void ResetForInputModeChange()
     {
+        PendingTap.Reset();
+        _lastTargetPressUsec = 0;
         var holders = new List<NCardHolder>();
         foreach (var entry in PinnedHolders)
             holders.Add(entry.Key);
@@ -334,6 +417,17 @@ public static class MobileTapPreviewPatches
     internal static bool IsTapPreviewEnabled()
     {
         return MobileInputPolicyPatches.UseTouchControls && AndroidSettingsBridge.GetBool("touch_lift_preview", true);
+    }
+
+    // Off restores the old press-to-play upper-area tap and long-press targeting.
+    internal static bool IsTapGuardEnabled()
+    {
+        return IsTapPreviewEnabled() && AndroidSettingsBridge.GetBool("touch_tap_guard", true);
+    }
+
+    private static bool IsTargetAssistEnabled()
+    {
+        return AndroidSettingsBridge.GetBool("touch_target_assist", true);
     }
 
     internal static bool IsCombatInputActive()
@@ -639,6 +733,132 @@ public static class MobileTapPreviewPatches
         return true;
     }
 
+    // Guarded replacement for HandleMobilePinnedCardPlayZoneTap. The press is
+    // only recorded (never consumed), so Godot still routes it to whatever is under
+    // the finger. The release plays the pinned card (untargeted) or targets the
+    // nearest enemy (targeted, assist) only when it was a short, still tap that no
+    // button/potion/relic/hand card claimed. Never acts on press or after a hold.
+    private static void TrackGuardedTap(NPlayerHand hand, InputEvent input)
+    {
+        if (input is InputEventScreenTouch { Pressed: true } && PendingTap.Active && PendingTap.Frame != Engine.GetProcessFrames())
+        {
+            PendingTap.Reset(); // A second finger joined: two-finger gestures are not taps.
+            return;
+        }
+        if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button)
+            return;
+        if (button.Pressed)
+        {
+            PendingTap.Reset();
+            if (!CanStartGuardedTap(hand, button.Position, out var pressedHolder))
+                return;
+            PendingTap.Active = true;
+            PendingTap.Holder = pressedHolder;
+            PendingTap.Position = button.Position;
+            PendingTap.Frame = Engine.GetProcessFrames();
+            PendingTap.StartUsec = Time.GetTicksUsec();
+            return;
+        }
+        if (!PendingTap.Active)
+            return;
+        var holder = PendingTap.Holder;
+        var position = PendingTap.Position;
+        var claimed = PendingTap.Claimed;
+        var heldUsec = Time.GetTicksUsec() - PendingTap.StartUsec;
+        PendingTap.Reset();
+        if (button.Canceled || claimed || heldUsec >= TapMaxDurationUsec || button.Position.DistanceSquaredTo(position) > TapSlop * TapSlop)
+            return;
+        if (!IsPinnedCardActionable(hand, holder))
+            return;
+        var model = holder.CardNode?.Model;
+        if (ShouldPlayPinnedCardOnTap(model))
+        {
+            PatchHelper.Log($"Play-zone tap played pinned card on release: {model?.Id}");
+            TryPlayPinnedCardOnTap(hand, holder);
+            return;
+        }
+        TryTargetAssist(hand, holder, position);
+    }
+
+    private static bool CanStartGuardedTap(NPlayerHand hand, Vector2 position, out NHandCardHolder holder)
+    {
+        holder = null;
+        if (!States.TryGetValue(hand, out var state) || state.PinnedHolder is not NHandCardHolder pinned || !IsPinnedCardActionable(hand, pinned))
+            return false;
+        if (position.Y >= hand.GetViewport().GetVisibleRect().Size.Y * 0.75f || IsPositionOverAnyHandCard(hand, position))
+            return false;
+        var model = pinned.CardNode?.Model;
+        if (!ShouldPlayPinnedCardOnTap(model) && !(IsTargetAssistEnabled() && IsSingleCreatureTarget(model)))
+            return false;
+        holder = pinned;
+        return true;
+    }
+
+    private static bool IsPinnedCardActionable(NPlayerHand hand, NHandCardHolder holder)
+    {
+        if (!IsTapPreviewEnabled() || hand.CurrentMode != NPlayerHand.Mode.Play || hand.PeekButton.IsPeeking || hand.InCardPlay || !AreCardActionsAllowed(hand))
+            return false;
+        return States.TryGetValue(hand, out var state) && IsSameValidHolder(state.PinnedHolder, holder) && !hand.IsAwaitingPlay(holder) && holder.CardNode != null;
+    }
+
+    // Forgiving enemy targeting: a quick tap that missed every creature hitbox picks
+    // the nearest valid target within the assist radius, through the same
+    // StartCardPlay + NTargetManager path as a direct tap on the creature.
+    private static void TryTargetAssist(NPlayerHand hand, NHandCardHolder holder, Vector2 position)
+    {
+        var model = holder.CardNode?.Model;
+        var room = NCombatRoom.Instance;
+        if (model == null || room == null || !IsTargetAssistEnabled() || !IsSingleCreatureTarget(model))
+            return;
+        var bestDistance = hand.GetViewport().GetVisibleRect().Size.Y * TargetAssistScreenFraction;
+        NCreature best = null;
+        foreach (var creature in room.CreatureNodes)
+        {
+            if (creature == null || !GodotObject.IsInstanceValid(creature) || !creature.IsVisibleInTree())
+                continue;
+            var hitbox = creature.Hitbox;
+            if (hitbox == null || !hitbox.IsVisibleInTree() || hitbox.MouseFilter == Control.MouseFilterEnum.Ignore)
+                continue;
+            var distance = DistanceToRect(ScreenRect(hitbox), position);
+            if (distance <= 0f)
+                return; // Inside a creature: Godot's own hit test already owned this tap.
+            if (distance < bestDistance && creature.Entity is { IsHittable: true } entity && CanTargetPinnedCard(model, entity))
+            {
+                best = creature;
+                bestDistance = distance;
+            }
+        }
+        if (best == null)
+            return;
+        PatchHelper.Log($"Enemy tap assist: {model.Id} -> {best.Name} ({bestDistance:0}px from tap).");
+        StartCardPlay(hand, holder, startedViaShortcut: true);
+        var targetManager = NTargetManager.Instance;
+        if (targetManager == null || !targetManager.IsInSelection)
+            return; // CanPlay failed; NMouseCardPlay already cancelled and explained why.
+        targetManager.OnNodeHovered(best);
+        // This release already went past NTargetManager._Input, so finish here.
+        FinishTargetingMethod?.Invoke(targetManager, new object[] { false });
+    }
+
+    private static bool IsSingleCreatureTarget(CardModel card)
+    {
+        return card != null && card.TargetType is TargetType.AnyEnemy or TargetType.AnyAlly;
+    }
+
+    private static Rect2 ScreenRect(Control control)
+    {
+        var transform = control.GetGlobalTransformWithCanvas();
+        var scale = transform.Scale;
+        return new Rect2(transform.Origin, new Vector2(control.Size.X * Mathf.Abs(scale.X), control.Size.Y * Mathf.Abs(scale.Y)));
+    }
+
+    private static float DistanceToRect(Rect2 rect, Vector2 point)
+    {
+        var dx = Mathf.Max(Mathf.Max(rect.Position.X - point.X, 0f), point.X - rect.End.X);
+        var dy = Mathf.Max(Mathf.Max(rect.Position.Y - point.Y, 0f), point.Y - rect.End.Y);
+        return Mathf.Sqrt(dx * dx + dy * dy);
+    }
+
     private static bool IsPositionOverAnyHandCard(NPlayerHand hand, Vector2 position)
     {
         foreach (var activeHolder in hand.ActiveHolders)
@@ -841,6 +1061,24 @@ public static class MobileTapPreviewPatches
         public NHandCardHolder DragHolder;
         public NHandCardHolder PendingPutDownHolder;
         public Vector2 DragStartPosition;
+    }
+
+    private sealed class GuardedTap
+    {
+        public bool Active;
+        public bool Claimed;
+        public NHandCardHolder Holder;
+        public Vector2 Position;
+        public ulong Frame;
+        public ulong StartUsec;
+
+        public void Reset()
+        {
+            Active = Claimed = false;
+            Holder = null;
+            Position = Vector2.Zero;
+            Frame = StartUsec = 0;
+        }
     }
 
     private sealed class PinnedState

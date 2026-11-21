@@ -67,6 +67,17 @@ namespace Godot
         public void ReleaseFocus() { HasFocus = false; }
         public bool TryGrabFocus() { HasFocus = true; return true; }
         public Rect2 GetGlobalRect() => new() { Position = Position, Size = new Vector2(100, 100) };
+        public enum MouseFilterEnum { Stop, Pass, Ignore }
+        public MouseFilterEnum MouseFilter;
+        public Vector2 Size = new(100, 100);
+        public bool IsVisibleInTree() => Valid && Visible;
+        public Transform2D GetGlobalTransformWithCanvas() => new() { Origin = Position, Scale = new Vector2(1, 1) };
+    }
+    public struct Transform2D { public Vector2 Origin, Scale; }
+    public static class Engine
+    {
+        public static ulong Frames;
+        public static ulong GetProcessFrames() => Frames;
     }
     public class Viewport
     {
@@ -116,10 +127,13 @@ namespace Godot
         public static Vector2 Zero => default;
         public static Vector2 operator -(Vector2 a, Vector2 b) => new(a.X - b.X, a.Y - b.Y);
         public float LengthSquared() => X * X + Y * Y;
+        public float DistanceSquaredTo(Vector2 other) => (this - other).LengthSquared();
     }
     public struct Rect2
     {
         public Vector2 Position, Size;
+        public Rect2(Vector2 position, Vector2 size) { Position = position; Size = size; }
+        public Vector2 End => new(Position.X + Size.X, Position.Y + Size.Y);
         public bool HasPoint(Vector2 point) => point.X >= Position.X && point.Y >= Position.Y
             && point.X <= Position.X + Size.X && point.Y <= Position.Y + Size.Y;
     }
@@ -128,6 +142,9 @@ namespace Godot
         public const float Pi = MathF.PI, Tau = MathF.Tau;
         public static float Sin(float value) => MathF.Sin(value);
         public static float PosMod(float value, float modulus) => (value % modulus + modulus) % modulus;
+        public static float Abs(float value) => MathF.Abs(value);
+        public static float Max(float a, float b) => MathF.Max(a, b);
+        public static float Sqrt(float value) => MathF.Sqrt(value);
     }
     public static class Time
     {
@@ -179,7 +196,7 @@ namespace Godot
         public bool IsActionPressed(string action) => SelectPressed;
     }
     public enum MouseButton { Left, Right }
-    public class InputEventMouseButton : InputEvent { public MouseButton ButtonIndex; public bool Pressed; public Vector2 Position; }
+    public class InputEventMouseButton : InputEvent { public MouseButton ButtonIndex; public bool Pressed; public bool Canceled; public Vector2 Position; }
     public class InputEventScreenTouch : InputEvent { public bool Pressed; public Vector2 Position; }
     public class InputEventMouseMotion : InputEvent { public Vector2 Position; }
     public class InputEventScreenDrag : InputEvent { public Vector2 Position; }
@@ -302,18 +319,24 @@ namespace MegaCrit.Sts2.Core.Nodes.Combat
             if (_followMouse && RestoreOnFinish) Input.MouseMode = Input.MouseModeEnum.Visible;
         }
     }
+    public enum TargetMode { None, ReleaseMouseToTarget, ClickMouseToTarget, Controller }
     public class NTargetManager
     {
         public static NTargetManager Instance = new();
-        private string _targetMode = "ReleaseMouseToTarget";
+        private TargetMode _targetMode = TargetMode.ReleaseMouseToTarget;
+        public TargetMode Mode { set => _targetMode = value; }
+        public bool IsInSelection;
         public Node HoveredNode { get; set; }
         public bool Cancelled;
+        public int Finishes;
         public NTargetingArrow TargetingArrow;
-        private void FinishTargeting(bool cancel) { Cancelled = cancel; TargetingArrow?.StopDrawing(); }
+        private void FinishTargeting(bool cancel) { Cancelled = cancel; Finishes++; IsInSelection = false; TargetingArrow?.StopDrawing(); }
         public void CompleteTargeting() => FinishTargeting(false);
         public void CancelTargeting() => FinishTargeting(true);
         [MethodImpl(MethodImplOptions.NoInlining)] public void StartTargeting() { TargetingArrow?.StartDrawingFrom(false); }
-        [MethodImpl(MethodImplOptions.NoInlining)] public void _Input(InputEvent inputEvent) { }
+        // Click-to-target finishes on any left release while selecting.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public void _Input(InputEvent inputEvent) { if (IsInSelection && inputEvent is InputEventMouseButton { Pressed: false }) FinishTargeting(false); }
         public void OnNodeHovered(Node node) { HoveredNode = node; }
     }
 }

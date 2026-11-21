@@ -290,6 +290,9 @@ public static class AndroidInGameSettingsPatches
         AddSwitchRow(content, "touch_target_assist", T("敌人点击辅助", "Enemy tap assist"), true, null);
         AddSwitchRow(content, "mobile_selection_confirmation", T("手机选择二次确认", "Mobile selection confirmation"), true, null);
         AddSwitchRow(content, "mobile_confirm_near_thumb", T("确认按钮靠近所选项", "Confirm button near selection"), true, null);
+        AddSwitchRow(content, "mobile_icon_tap_tooltip", T("点击图标显示提示", "Tap icons for tooltips"), true, null);
+        AddSwitchRow(content, "mobile_back_key_screen_button", T("返回键按下跳过/取消", "Back key presses Skip/Cancel"), true, null);
+        AddSwitchRow(content, "mobile_relic_choice_confirmation", T("遗物选择二次确认", "Relic choice confirmation"), true, null);
         AddSwitchRow(content, "mobile_two_finger_inspect", T("双指查看", "Two-finger inspect"), true, null);
         AddSwitchRow(content, "mobile_grid_touch_scroll", T("列表拖动滚动（拖动不误选）", "Drag-scroll lists (drag never selects)"), true, enabled =>
         {

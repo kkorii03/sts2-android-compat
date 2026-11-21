@@ -230,7 +230,36 @@ public static class AndroidInGameSettingsPatches
 
     private static void BuildRows(VBoxContainer content)
     {
-        AddHeader(content, T("移动端移植设置", "Mobile Port Settings"));
+        // What a native mobile release would offer. Everything technical lives in the
+        // developer section below, unlocked by tapping this header 7 times.
+        var header = AddHeader(content, T("触控", "Touch"));
+        AttachDeveloperModeUnlock(header, content);
+        AddIntPaginatorRow(content, MobileCombatSizing.HandCardScaleKey, T("手牌大小", "Hand card size"), Range(MobileCombatSizing.HandCardScaleMin, MobileCombatSizing.HandCardScaleMax, 5), MobileCombatSizing.HandCardScaleDefault, v => $"{v}%", _ => RefreshHandLayout());
+        AddIntPaginatorRow(content, MobileCombatSizing.CombatButtonScaleKey, T("结束回合/能量大小", "End turn / energy size"), Range(MobileCombatSizing.CombatButtonScaleMin, MobileCombatSizing.CombatButtonScaleMax, 5), MobileCombatSizing.CombatButtonScaleDefault, v => $"{v}%", _ => MobileCombatHudPatches.ApplyToCurrentCombat());
+        AddIntPaginatorRow(content, "ui_font_scale_percent", T("字体大小", "Font size"), Range(50, 200, 5), 100, v => $"{v}%", _ => DisplaySettingsPatches.ApplyRuntimeDisplaySettings());
+        AddTooltipModeRow(content);
+        AddTouchLiftPreviewRow(content);
+        AddSwitchRow(content, "touch_tap_guard", T("防误触出牌", "Accidental-play guard"), true, null);
+        AddSwitchRow(content, "mobile_selection_confirmation", T("手机选择二次确认", "Mobile selection confirmation"), true, null);
+        AddSwitchRow(content, "mobile_confirm_near_thumb", T("确认按钮靠近所选项", "Confirm button near selection"), true, null);
+        AddToggleRow(content, T("省电模式（60 Hz）", "Battery saver (60 Hz)"),
+            string.Equals(AndroidSettingsBridge.GetString("android_display_refresh_rate_mode", "high"), "60hz", StringComparison.OrdinalIgnoreCase),
+            enabled =>
+            {
+                var mode = enabled ? "60hz" : "high";
+                AndroidSettingsBridge.SetString("android_display_refresh_rate_mode", mode);
+                ApplyDisplayRefreshRateMode(mode);
+            });
+
+        if (!NativeFeel.ShowPortUi)
+            return;
+
+        AddHeader(content, T("开发者选项", "Developer options"));
+        AddToggleRow(content, T("开发者模式", "Developer mode"), NativeFeel.DeveloperMode, enabled =>
+        {
+            NativeFeel.SetDeveloperMode(enabled);
+            RebuildRowsDeferred(content);
+        });
         AddButtonRow(content, T("安卓外部设置", "Android companion settings"), T("打开", "Open"), () =>
         {
             if (!ExternalSettingsPatches.OpenCompanionSettings())
@@ -250,7 +279,6 @@ public static class AndroidInGameSettingsPatches
         }, readCurrent: DisplaySettingsPatches.GetAndroidScreenRotationMode);
         AddSizePaginatorRow(content, "fullscreen_render_size", T("渲染分辨率", "Render resolution"), GetResolutionOptions(), (0, 0), _ =>
             DisplaySettingsPatches.ApplyRuntimeDisplaySettings());
-        AddIntPaginatorRow(content, "ui_font_scale_percent", T("字体大小", "Font size"), Range(50, 200, 5), 100, v => $"{v}%", _ => DisplaySettingsPatches.ApplyRuntimeDisplaySettings());
         AddIntPaginatorRow(content, "global_scale", T("游戏缩放", "Game scale"), Range(50, 200, 5), 100, v => $"{v}%", v =>
         {
             AndroidSettingsBridge.SetFloat("global_scale", v / 100f);
@@ -260,24 +288,6 @@ public static class AndroidInGameSettingsPatches
         AddHeader(content, T("触摸 / 手牌", "Touch / Hand"));
         AddSwitchRow(content, "show_more_hand_card_text", T("显示更多手牌文字", "Show more hand-card text"), true, _ => RefreshHandLayout());
         AddIntPaginatorRow(content, "show_more_hand_card_text_lift_height_percent", T("手牌抬起高度", "Hand-card lift height"), Range(25, 100, 5), 50, v => $"{v}%", _ => RefreshHandLayout());
-        AddIntPaginatorRow(content, MobileCombatSizing.HandCardScaleKey, T("手牌大小", "Hand card size"), Range(MobileCombatSizing.HandCardScaleMin, MobileCombatSizing.HandCardScaleMax, 5), MobileCombatSizing.HandCardScaleDefault, v => $"{v}%", _ => RefreshHandLayout());
-        AddIntPaginatorRow(content, MobileCombatSizing.CombatButtonScaleKey, T("结束回合/能量大小", "End turn / energy size"), Range(MobileCombatSizing.CombatButtonScaleMin, MobileCombatSizing.CombatButtonScaleMax, 5), MobileCombatSizing.CombatButtonScaleDefault, v => $"{v}%", _ => MobileCombatHudPatches.ApplyToCurrentCombat());
-        AddSwitchRow(content, "touch_lift_preview", T("抬起触摸时预览", "Touch-lift preview"), true, enabled =>
-        {
-            if (!enabled)
-                MobileTapPreviewPatches.ClearAllPinned();
-        });
-        AddStringPaginatorRow(content, "mobile_tooltip_mode", T("Tooltip 显示", "Tooltip display"),
-            new[]
-            {
-                ("immediate", T("立即显示", "Immediate")),
-                ("long_press", T("长按 1 秒", "Long press 1s")),
-                ("hidden", T("隐藏", "Hidden")),
-            }, "immediate", _ =>
-            {
-                AndroidSettingsBridge.SetInt("mobile_tooltip_long_press_ms", 1000);
-                MobileTooltipPatches.RefreshModeFromSettings();
-            });
         AddStringPaginatorRow(content, "touch_lift_retap_action", T("抬起后二次点击操作", "Touch-lift re-tap action"),
             new[]
             {
@@ -286,10 +296,7 @@ public static class AndroidInGameSettingsPatches
                 ("none", T("无", "None")),
             }, "put_down", null);
         AddSwitchRow(content, "mobile_hand_scrub", T("滑动浏览手牌", "Slide to browse hand"), true, null);
-        AddSwitchRow(content, "touch_tap_guard", T("防误触出牌", "Accidental-play guard"), true, null);
         AddSwitchRow(content, "touch_target_assist", T("敌人点击辅助", "Enemy tap assist"), true, null);
-        AddSwitchRow(content, "mobile_selection_confirmation", T("手机选择二次确认", "Mobile selection confirmation"), true, null);
-        AddSwitchRow(content, "mobile_confirm_near_thumb", T("确认按钮靠近所选项", "Confirm button near selection"), true, null);
         AddSwitchRow(content, "mobile_two_finger_inspect", T("双指查看", "Two-finger inspect"), true, null);
         AddSwitchRow(content, "mobile_grid_touch_scroll", T("列表拖动滚动（拖动不误选）", "Drag-scroll lists (drag never selects)"), true, enabled =>
         {
@@ -321,6 +328,79 @@ public static class AndroidInGameSettingsPatches
         AddIntPaginatorRow(content, "max_multiplayer_players", T("实验性最大联机人数", "Experimental max players"), Range(1, 128, 1), 4, v => v.ToString(), null);
         AddSwitchRow(content, "lan_multiplayer_enabled", T("本地联机补丁", "Local multiplayer patch"), true, null);
         AddTextRow(content, "lan_custom_player_id", T("LAN 自定义玩家 ID", "LAN custom player ID"), "", null);
+    }
+
+    private static void AddTooltipModeRow(VBoxContainer content)
+    {
+        AddStringPaginatorRow(content, "mobile_tooltip_mode", T("Tooltip 显示", "Tooltip display"),
+            new[]
+            {
+                ("immediate", T("立即显示", "Immediate")),
+                ("long_press", T("长按 1 秒", "Long press 1s")),
+                ("hidden", T("隐藏", "Hidden")),
+            }, "immediate", _ =>
+            {
+                AndroidSettingsBridge.SetInt("mobile_tooltip_long_press_ms", 1000);
+                MobileTooltipPatches.RefreshModeFromSettings();
+            });
+    }
+
+    private static void AddTouchLiftPreviewRow(VBoxContainer content)
+    {
+        AddSwitchRow(content, "touch_lift_preview", T("抬起触摸时预览", "Touch-lift preview"), true, enabled =>
+        {
+            if (!enabled)
+                MobileTapPreviewPatches.ClearAllPinned();
+        });
+    }
+
+    private const int DeveloperUnlockTaps = 7;
+    private const ulong DeveloperUnlockWindowMs = 1500;
+
+    // Android-style hidden developer options: 7 quick taps on the section title.
+    private static void AttachDeveloperModeUnlock(Label header, VBoxContainer content)
+    {
+        if (!NativeFeel.IsAndroid || NativeFeel.DeveloperMode)
+            return;
+        header.MouseFilter = Control.MouseFilterEnum.Stop;
+        var taps = 0;
+        ulong lastTapMs = 0;
+        header.GuiInput += inputEvent =>
+        {
+            if (inputEvent is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
+                return;
+            var now = Time.GetTicksMsec();
+            taps = now - lastTapMs <= DeveloperUnlockWindowMs ? taps + 1 : 1;
+            lastTapMs = now;
+            if (taps < DeveloperUnlockTaps)
+                return;
+            taps = 0;
+            NativeFeel.SetDeveloperMode(true);
+            RebuildRowsDeferred(content);
+        };
+    }
+
+    private static void RebuildRowsDeferred(VBoxContainer content)
+    {
+        Callable.From(() =>
+        {
+            try
+            {
+                if (!GodotObject.IsInstanceValid(content))
+                    return;
+                foreach (Node child in content.GetChildren())
+                {
+                    content.RemoveChild(child);
+                    child.QueueFree();
+                }
+                BuildRows(content);
+                AndroidFontCoveragePatches.RegisterTreePostfix(content);
+            }
+            catch (Exception exception)
+            {
+                PatchHelper.Log($"Rebuilding mobile settings rows failed: {exception.Message}");
+            }
+        }).CallDeferred();
     }
 
     private static void ApplyDisplayRefreshRateMode(string mode)
@@ -428,7 +508,7 @@ public static class AndroidInGameSettingsPatches
             SetOwnerRecursive(child, owner);
     }
 
-    private static void AddHeader(VBoxContainer content, string text)
+    private static Label AddHeader(VBoxContainer content, string text)
     {
         var divider = new ColorRect
         {
@@ -451,6 +531,7 @@ public static class AndroidInGameSettingsPatches
             label.AddThemeFontOverride("font", _regularFont);
         label.AddThemeFontSizeOverride("font_size", 30);
         content.AddChild(label);
+        return label;
     }
 
     private static HBoxContainer AddBaseRow(VBoxContainer content, string labelText)
@@ -602,13 +683,17 @@ public static class AndroidInGameSettingsPatches
 
     private static void AddSwitchRow(VBoxContainer content, string key, string label, bool fallback, Action<bool> afterChanged)
     {
-        var row = AddBaseRow(content, label);
-        var check = CreateOfficialTickbox(AndroidSettingsBridge.GetBool(key, fallback), pressed =>
+        AddToggleRow(content, label, AndroidSettingsBridge.GetBool(key, fallback), pressed =>
         {
             AndroidSettingsBridge.SetBool(key, pressed);
             afterChanged?.Invoke(pressed);
         });
-        row.AddChild(check);
+    }
+
+    private static void AddToggleRow(VBoxContainer content, string label, bool initialValue, Action<bool> onChanged)
+    {
+        var row = AddBaseRow(content, label);
+        row.AddChild(CreateOfficialTickbox(initialValue, onChanged));
     }
 
     private static void AddIntPaginatorRow(VBoxContainer content, string key, string label, int[] values, int fallback, Func<int, string> format, Action<int> afterChanged, Func<int> readCurrent = null)

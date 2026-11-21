@@ -173,7 +173,7 @@ public static class LanMultiplayerPatches
     {
         try
         {
-            var enabled = AndroidSettingsBridge.GetBool("max_multiplayer_enabled", true);
+            var enabled = NativeFeel.ShowPortUi && AndroidSettingsBridge.GetBool("max_multiplayer_enabled", true);
             var generalSettings = __instance.GetNodeOrNull<Node>("%GeneralSettings");
             var content = generalSettings?.GetType().GetProperty("Content", BindingFlags.Public | BindingFlags.Instance)?.GetValue(generalSettings) as Node
                 ?? generalSettings?.GetNodeOrNull<Node>("Content");

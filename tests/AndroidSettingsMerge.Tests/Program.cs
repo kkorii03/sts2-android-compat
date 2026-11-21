@@ -20,7 +20,7 @@ internal static class Program
                 + "\"preload_enabled\":false,\"preload_render_warmup_enabled\":true,\"preload_runtime_enabled\":false,"
                 + "\"preload_vfx_tree_warmup_enabled\":false,\"preload_combat_animation_warmup_mode\":\"safe\","
                 + "\"mobile_hand_card_scale_percent\":120,\"mobile_combat_button_scale_percent\":100,"
-                + "\"mobile_grid_touch_scroll\":false}");
+                + "\"mobile_grid_touch_scroll\":false,\"android_developer_mode\":true}");
             string beforeSave = File.ReadAllText(AndroidSettingsBridge.SettingsPath);
 
             // A typed game settings save discards fields it does not own.
@@ -47,6 +47,8 @@ internal static class Program
                 throw new InvalidOperationException("Saving in-game settings lost the phone hand-card / combat-button size choices.");
             if (saved["mobile_grid_touch_scroll"]?.GetValue<bool>() != false)
                 throw new InvalidOperationException("Saving in-game settings lost the disabled grid touch-scroll choice.");
+            if (saved["android_developer_mode"]?.GetValue<bool>() != true)
+                throw new InvalidOperationException("Saving in-game settings turned the hidden developer mode back off.");
             if (saved["volume_master"]?.GetValue<double>() != 0.25)
                 throw new InvalidOperationException("Merging Android preferences rolled back the game's new volume setting.");
             Console.WriteLine("PASS settings serialization round-trip: " + saved.ToJsonString());

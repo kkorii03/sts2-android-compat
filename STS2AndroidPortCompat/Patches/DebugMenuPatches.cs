@@ -16,7 +16,8 @@ public static class DebugMenuPatches
 
     public static void Apply(Harmony _)
     {
-        if (!IsEnabled())
+        // The launcher flag alone no longer shows the debug menu; developer mode must be on too.
+        if (!IsEnabled() || !NativeFeel.ShowPortUi)
             return;
 
         try

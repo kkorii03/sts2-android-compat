@@ -47,7 +47,8 @@ public static class ExternalSettingsPatches
             SaveManager.Instance.SavePrefsFile();
             SaveManager.Instance.SaveProgressFile();
             SaveManager.Instance.SaveProfile();
-            if (CallStaticGodotAppBool("restartToSettingsFromGame"))
+            // A native app just closes; only developer mode returns to the launcher shell.
+            if (NativeFeel.ShowPortUi && CallStaticGodotAppBool("restartToSettingsFromGame"))
             {
                 PatchHelper.Log("NGame.Quit redirected to Java settings-shell restart.");
                 return false;
@@ -64,6 +65,8 @@ public static class ExternalSettingsPatches
     {
         try
         {
+            if (!NativeFeel.ShowPortUi)
+                return;
             var content = GetSettingsContent(__instance);
             if (content == null)
                 return;

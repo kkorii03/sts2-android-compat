@@ -80,6 +80,7 @@ public static class AndroidSettingsMerge
         "android_floating_mouse_enabled",
         "android_dev_tools_enabled",
         "android_dev_inspector_writable",
+        "android_developer_mode",
     };
 
     public static void MergeBackAndroidOnlyFields(string beforeJson)

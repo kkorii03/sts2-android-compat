@@ -37,6 +37,9 @@ public static class MobileTapPreviewPatches
     // Enemy tap assist radius as a share of the visible height (~76 px at 1080p,
     // about 5 mm on a phone), so it follows the UI scale instead of raw pixels.
     private const float TargetAssistScreenFraction = 0.07f;
+    private const float PlayZoneMaxScreenFraction = 0.75f;
+    // ~43 px at 1080p: the no-op strip just above the resting hand.
+    private const float HandDeadBandScreenFraction = 0.04f;
     private static readonly GuardedTap PendingTap = new();
     private static ulong _lastTargetPressUsec;
     private static readonly MethodInfo FinishTargetingMethod = AccessTools.Method(typeof(NTargetManager), "FinishTargeting", new[] { typeof(bool) });
@@ -44,8 +47,11 @@ public static class MobileTapPreviewPatches
     private static readonly ConditionalWeakTable<NPlayerHand, PreviewState> States = new();
     private static readonly ConditionalWeakTable<NCardHolder, PinnedState> PinnedHolders = new();
     private static readonly ConditionalWeakTable<NCardHolder, SuppressedHoverState> SuppressedHolders = new();
-    private static readonly HashSet<int> ConnectedCreatures = new();
-    private static readonly HashSet<int> ConnectedHandHolders = new();
+    // Keyed by the node itself (not a truncated instance id), so a freed node
+    // can never make a new one look already hooked, and entries die with the node.
+    private static readonly ConditionalWeakTable<NCreature, object> ConnectedCreatures = new();
+    private static readonly ConditionalWeakTable<NHandCardHolder, object> ConnectedHandHolders = new();
+    private static readonly object Hooked = new();
     private static readonly MethodInfo StartCardPlayMethod = typeof(NPlayerHand).GetMethod("StartCardPlay", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(NHandCardHolder), typeof(bool) }, null);
     private static readonly Func<UnplayableReason, AbstractModel, LocString> GetPlayerDialogueLine =
         AccessTools.Method(typeof(CardModel).Assembly.GetType("MegaCrit.Sts2.Core.Entities.Cards.UnplayableReasonExtensions"), "GetPlayerDialogueLine")
@@ -76,6 +82,10 @@ public static class MobileTapPreviewPatches
             if (hand == null || !IsCombatInputActive())
             {
                 PendingTap.Reset();
+                // A re-tap put-down or direct drag armed before the screen changed
+                // must not consume the next unrelated release or drag.
+                if (hand != null)
+                    CancelTapGestureForScrub(hand);
                 return true;
             }
             var isButton = inputEvent is InputEventMouseButton or InputEventScreenTouch;
@@ -89,8 +99,9 @@ public static class MobileTapPreviewPatches
                 __instance.GetViewport()?.SetInputAsHandled();
                 return false;
             }
-            if (HandleMobilePinnedCardCancelTap(hand, inputEvent))
-                __instance.GetViewport()?.SetInputAsHandled();
+            // Puts the pinned card down but never consumes the press: End Turn and
+            // the draw/discard piles sit below the play zone and still get it.
+            HandleMobilePinnedCardCancelTap(hand, inputEvent);
         }
         catch (Exception exception)
         {
@@ -219,8 +230,9 @@ public static class MobileTapPreviewPatches
         try
         {
             var hitbox = __instance.Hitbox;
-            if (hitbox == null || !ConnectedHandHolders.Add((int)__instance.GetInstanceId()))
+            if (hitbox == null || ConnectedHandHolders.TryGetValue(__instance, out _))
                 return;
+            ConnectedHandHolders.Add(__instance, Hooked);
             hitbox.Connect(NClickableControl.SignalName.MouseReleased, Callable.From<InputEvent>(inputEvent => OnHandHolderMouseReleased(__instance, inputEvent)));
             hitbox.Connect(Control.SignalName.MouseExited, Callable.From(() => OnHandHolderHitboxMouseExited(__instance)));
         }
@@ -235,8 +247,9 @@ public static class MobileTapPreviewPatches
         try
         {
             var hitbox = __instance.Hitbox;
-            if (hitbox == null || !ConnectedCreatures.Add((int)__instance.GetInstanceId()))
+            if (hitbox == null || ConnectedCreatures.TryGetValue(__instance, out _))
                 return;
+            ConnectedCreatures.Add(__instance, Hooked);
             hitbox.Connect(Control.SignalName.GuiInput, Callable.From<InputEvent>(inputEvent => OnCreatureHitboxGuiInput(__instance, inputEvent)));
         }
         catch (Exception exception)
@@ -577,9 +590,12 @@ public static class MobileTapPreviewPatches
         }
     }
 
+    // Only the emulated mouse release (first finger) completes it: consuming the
+    // raw touch release would hide it from later _Input prefixes (hand scrub's
+    // finger bookkeeping, tooltips), and a second finger's release is not a re-tap.
     private static bool HandlePendingPutDownRelease(NPlayerHand hand, InputEvent input)
     {
-        if (!IsDirectDragRelease(input) || !States.TryGetValue(hand, out var state) || state.PendingPutDownHolder == null)
+        if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } || !States.TryGetValue(hand, out var state) || state.PendingPutDownHolder == null)
             return false;
         return CompletePendingPutDown(hand, state, state.PendingPutDownHolder, "global release");
     }
@@ -719,10 +735,45 @@ public static class MobileTapPreviewPatches
         var position = press.Position;
         if (!States.TryGetValue(hand, out var state) || state.PinnedHolder is not NHandCardHolder holder || !IsSameValidHolder(holder, holder) || hand.IsAwaitingPlay(holder) || !ShouldPlayPinnedCardOnTap(holder.CardNode?.Model))
             return false;
-        if (position.Y >= hand.GetViewport().GetVisibleRect().Size.Y * 0.75f)
+        if (GetTapZone(hand, holder, position.Y) != TapZone.Play)
             return false;
         TryPlayPinnedCardOnTap(hand, holder);
         return true;
+    }
+
+    private enum TapZone
+    {
+        Play,
+        DeadBand,
+        BelowPlayZone,
+    }
+
+    // One boundary for play-zone taps and cancel taps. The play zone ends at 75%
+    // of the screen height, or a dead band above the resting hand when the hand
+    // reaches higher (bigger cards + lift). A tap inside that band was probably
+    // aimed at a card's top edge: it neither plays the pinned card nor puts it down.
+    private static TapZone GetTapZone(NPlayerHand hand, NHandCardHolder pinned, float y)
+    {
+        var height = hand.GetViewport().GetVisibleRect().Size.Y;
+        var handTop = GetRestingHandTopY(hand, pinned);
+        var bandTop = handTop - height * HandDeadBandScreenFraction;
+        if (y < Mathf.Min(height * PlayZoneMaxScreenFraction, bandTop))
+            return TapZone.Play;
+        return y >= bandTop && y < handTop ? TapZone.DeadBand : TapZone.BelowPlayZone;
+    }
+
+    // Top edge of the resting hand, ignoring the lifted pinned card;
+    // float.MaxValue when no other card rests in the hand.
+    internal static float GetRestingHandTopY(NPlayerHand hand, NHandCardHolder pinned)
+    {
+        var top = float.MaxValue;
+        foreach (var holder in hand.ActiveHolders)
+        {
+            if (ReferenceEquals(holder, pinned) || !GodotObject.IsInstanceValid(holder) || holder.Hitbox == null)
+                continue;
+            top = Mathf.Min(top, holder.Hitbox.GetGlobalRect().Position.Y);
+        }
+        return top;
     }
 
     private static bool HandleMobilePinnedCardCancelTap(NPlayerHand hand, InputEvent input)
@@ -733,7 +784,7 @@ public static class MobileTapPreviewPatches
             return false;
         if (!States.TryGetValue(hand, out var state) || state.PinnedHolder is not NHandCardHolder holder || !IsSameValidHolder(holder, holder) || hand.IsAwaitingPlay(holder))
             return false;
-        if (position.Y < hand.GetViewport().GetVisibleRect().Size.Y * 0.75f || IsPositionOverAnyHandCard(hand, position))
+        if (GetTapZone(hand, holder, position.Y) != TapZone.BelowPlayZone || IsPositionOverAnyHandCard(hand, position))
             return false;
         ClearPinned(hand, suppressHoverUntilExit: true);
         return true;
@@ -791,7 +842,7 @@ public static class MobileTapPreviewPatches
         holder = null;
         if (!States.TryGetValue(hand, out var state) || state.PinnedHolder is not NHandCardHolder pinned || !IsPinnedCardActionable(hand, pinned))
             return false;
-        if (position.Y >= hand.GetViewport().GetVisibleRect().Size.Y * 0.75f || IsPositionOverAnyHandCard(hand, position))
+        if (GetTapZone(hand, pinned, position.Y) != TapZone.Play || IsPositionOverAnyHandCard(hand, position))
             return false;
         var model = pinned.CardNode?.Model;
         if (!ShouldPlayPinnedCardOnTap(model) && !(IsTargetAssistEnabled() && IsSingleCreatureTarget(model)))

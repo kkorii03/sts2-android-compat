@@ -11,8 +11,9 @@ namespace Godot
 {
     public class GodotObject
     {
-        private static ulong _nextId;
-        private readonly ulong _id = ++_nextId;
+        // Settable so a test can mint ids that collide in their low 32 bits.
+        public static ulong NextId;
+        private readonly ulong _id = ++NextId;
         public bool Valid = true;
         public ulong GetInstanceId() => _id;
         public static bool IsInstanceValid(GodotObject value) => value != null && value.Valid;

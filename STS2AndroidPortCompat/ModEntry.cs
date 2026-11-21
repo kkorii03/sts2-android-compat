@@ -86,6 +86,7 @@ public static class ModEntry
         // Install the early localization guard above before touching run-history screens.
         ApplyPatchGroup("Run history platform fallback patches", () => RunHistoryPatches.Apply(_harmony));
         ApplyPatchGroup("Android background audio lifecycle", () => AndroidAudioLifecyclePatches.Apply(_harmony));
+        ApplyPatchGroup("Android save on pause", () => AndroidSaveOnPausePatches.Apply(_harmony));
 
         ApplyPatchGroup("Release/settings/display patches", () =>
         {

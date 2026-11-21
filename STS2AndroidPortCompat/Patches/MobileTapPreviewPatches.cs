@@ -290,7 +290,35 @@ public static class MobileTapPreviewPatches
         }
     }
 
-    private static bool ShouldHandle(NPlayerHand hand, NCardHolder holder)
+    // Hand scrubbing moves the pin without arming the tap drag or a pending
+    // re-tap put-down; MobileHandScrubPatches owns the upward-play check then.
+    internal static void PinForScrub(NPlayerHand hand, NHandCardHolder holder)
+    {
+        States.GetOrCreateValue(hand).PendingPutDownHolder = null;
+        SetPinned(hand, holder, armDirectDrag: false, log: false);
+    }
+
+    internal static void CancelTapGestureForScrub(NPlayerHand hand)
+    {
+        if (!States.TryGetValue(hand, out var state))
+            return;
+        state.PendingPutDownHolder = null;
+        ClearDirectDrag(state);
+    }
+
+    // Vanilla OnHolderUnfocused clears FocusedHolder even when another card is
+    // pinned; restore the pinned card's lift without touching drag state.
+    internal static void ReassertPinnedFocus(NPlayerHand hand)
+    {
+        if (!States.TryGetValue(hand, out var state) || state.PinnedHolder is not NHandCardHolder holder || !IsSameValidHolder(holder, holder))
+            return;
+        SetFocusedHolder(hand, holder);
+        RunManager.Instance.HoveredModelTracker.OnLocalCardHovered(holder.CardModel);
+        ForcePinnedPreview(holder);
+        RefreshLayout(hand);
+    }
+
+    internal static bool ShouldHandle(NPlayerHand hand, NCardHolder holder)
     {
         if (!IsTapPreviewEnabled())
             return false;
@@ -303,12 +331,12 @@ public static class MobileTapPreviewPatches
         return AreCardActionsAllowed(hand);
     }
 
-    private static bool IsTapPreviewEnabled()
+    internal static bool IsTapPreviewEnabled()
     {
         return MobileInputPolicyPatches.UseTouchControls && AndroidSettingsBridge.GetBool("touch_lift_preview", true);
     }
 
-    private static bool IsCombatInputActive()
+    internal static bool IsCombatInputActive()
     {
         try
         {
@@ -649,7 +677,7 @@ public static class MobileTapPreviewPatches
         return true;
     }
 
-    private static void StartCardPlay(NPlayerHand hand, NHandCardHolder holder, bool startedViaShortcut)
+    internal static void StartCardPlay(NPlayerHand hand, NHandCardHolder holder, bool startedViaShortcut)
     {
         if (StartCardPlayMethod == null)
             return;

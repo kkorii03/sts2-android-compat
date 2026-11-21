@@ -39,6 +39,7 @@ public static class AndroidSettingsMerge
         "show_more_hand_card_text_lift_height_percent",
         "touch_lift_preview",
         "touch_lift_retap_action",
+        "mobile_hand_scrub",
         "mobile_selection_confirmation",
         "mobile_two_finger_inspect",
         "mobile_tooltip_mode",

@@ -283,6 +283,7 @@ public static class AndroidInGameSettingsPatches
                 ("play", T("打出卡牌", "Play card")),
                 ("none", T("无", "None")),
             }, "put_down", null);
+        AddSwitchRow(content, "mobile_hand_scrub", T("滑动浏览手牌", "Slide to browse hand"), true, null);
         AddSwitchRow(content, "mobile_selection_confirmation", T("手机选择二次确认", "Mobile selection confirmation"), true, null);
         AddSwitchRow(content, "mobile_two_finger_inspect", T("双指查看", "Two-finger inspect"), true, null);
 

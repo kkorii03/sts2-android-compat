@@ -147,6 +147,7 @@ public static class ModEntry
         });
 
         ApplyPatchGroup("Mobile map touch controls", () => MobileMapTouchPatches.Apply(_harmony));
+        ApplyPatchGroup("Mobile grid/list touch scroll", () => MobileGridTouchScrollPatches.Apply(_harmony));
 
         ApplyPatchGroup("LAN/mod-loader diagnostic patches", () =>
         {

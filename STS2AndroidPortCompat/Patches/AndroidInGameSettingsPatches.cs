@@ -291,6 +291,11 @@ public static class AndroidInGameSettingsPatches
         AddSwitchRow(content, "mobile_selection_confirmation", T("手机选择二次确认", "Mobile selection confirmation"), true, null);
         AddSwitchRow(content, "mobile_confirm_near_thumb", T("确认按钮靠近所选项", "Confirm button near selection"), true, null);
         AddSwitchRow(content, "mobile_two_finger_inspect", T("双指查看", "Two-finger inspect"), true, null);
+        AddSwitchRow(content, "mobile_grid_touch_scroll", T("列表拖动滚动（拖动不误选）", "Drag-scroll lists (drag never selects)"), true, enabled =>
+        {
+            if (!enabled)
+                MobileGridTouchScrollPatches.Reset();
+        });
 
         AddHeader(content, T("系统 / 兼容", "System / Compatibility"));
         AddSwitchRow(content, "preload_enabled", T("启用预加载", "Enable preload"), true, enabled => PreloadManager.Enabled = enabled);

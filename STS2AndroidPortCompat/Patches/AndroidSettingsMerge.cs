@@ -43,6 +43,7 @@ public static class AndroidSettingsMerge
         "touch_lift_retap_action",
         "mobile_hand_scrub",
         "mobile_map_touch",
+        "mobile_grid_touch_scroll",
         "touch_tap_guard",
         "touch_target_assist",
         "mobile_selection_confirmation",

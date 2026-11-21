@@ -47,13 +47,15 @@ public static class MobileHandLayoutPatches
             // Bigger cards: grow every resting card and spread the row by the same amount
             // (clamped to the screen) so they overlap no more than vanilla. The focused or
             // pinned card keeps vanilla scale/height and only follows the spread sideways.
+            // Bigger resting cards grow downward (top edge stays at vanilla), like STS1 mobile.
             var baseScale = HandPosHelper.GetScale(holders.Count);
             var spread = cardFactor > 1f ? GetHandSpread(holders, baseScale, cardFactor) : 1f;
             foreach (var holder in holders)
             {
                 var focused = IsFocusedHolder(__instance, holder);
                 var target = holder.TargetPosition;
-                var newTarget = new Vector2(target.X * spread, focused ? target.Y : target.Y + yOffset);
+                var restingY = target.Y + yOffset + MobileCombatSizing.GrowDownOffset(holder.Hitbox?.Size.Y ?? 0f, baseScale.Y, cardFactor);
+                var newTarget = new Vector2(target.X * spread, focused ? target.Y : restingY);
                 var hasBefore = PreLayout.TryGetValue(holder.GetInstanceId(), out var before);
                 if (newTarget != target)
                 {

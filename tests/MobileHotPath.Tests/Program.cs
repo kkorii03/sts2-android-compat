@@ -161,6 +161,12 @@ internal static class Program
             "row is clamped so the outer card stays on screen");
         Require(MobileCombatSizing.HandSpread(1.3f, 610f, 300f, 700f) == 1f, "never squeezes the row tighter than vanilla");
         Require(MobileCombatSizing.HandSpread(1.2f, 0f, 120f, 0f) == 1.2f, "single card / unknown screen keeps the plain factor");
+        // Grow downward: 5 cards (base 0.8) at 110% move down half the extra height (422*0.8*0.1/2).
+        Require(Math.Abs(MobileCombatSizing.GrowDownOffset(422f, 0.8f, 1.1f) - 16.88f) < 0.01f, "bigger resting cards keep the vanilla top edge");
+        Require(MobileCombatSizing.GrowDownOffset(422f, 0.8f, 1f) == 0f, "100% keeps the vanilla height");
+        Require(Math.Abs(MobileCombatSizing.GrowDownOffset(0f, 0.8f, 1.1f) - 16.88f) < 0.01f, "unsized hitbox falls back to the vanilla card height");
+        Require(MobileCombatSizing.CombatButtonScaleDefault == 100 && MobileCombatSizing.HandCardScaleDefault == 110,
+            "defaults match the STS1 mobile proportions measured on the S24 Ultra");
     }
 
     private static void Require(bool condition, string message)

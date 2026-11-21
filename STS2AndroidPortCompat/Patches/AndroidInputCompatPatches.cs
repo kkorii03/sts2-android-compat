@@ -22,6 +22,9 @@ public static class AndroidInputCompatPatches
     private const float TriggerPressThreshold = 0.55f;
     private const float TriggerReleaseThreshold = 0.35f;
     private static readonly StringName MobileBackAction = "back_button";
+    internal const string BackKeyScreenButtonSetting = "mobile_back_key_screen_button";
+    private static readonly FieldInfo HotkeyPressedBindingsField = typeof(NHotkeyManager).GetField("_hotkeyPressedBindings", BindingFlags.NonPublic | BindingFlags.Instance);
+    private static readonly FieldInfo BlockingScreensField = typeof(NHotkeyManager).GetField("_blockingScreens", BindingFlags.NonPublic | BindingFlags.Instance);
     private static readonly Dictionary<(int Device, StringName Action), bool> TriggerStates = new();
     private static readonly Dictionary<int, TouchPointState> ActiveTouchPoints = new();
     private static readonly HashSet<int> SuppressedSecondaryTouchIndices = new();
@@ -151,11 +154,67 @@ public static class AndroidInputCompatPatches
         if (_lastBackDispatchFrame == frame)
             return;
         _lastBackDispatchFrame = frame;
+        if (ShouldDispatchBackAsScreenCancelOnly())
+        {
+            DispatchMegaInput(MegaInput.cancel, true);
+            DispatchMegaInput(MegaInput.cancel, false);
+            GD.Print("[AndroidInput] dispatched Android Back as the screen's cancel/skip button");
+            return;
+        }
         DispatchMegaInput(MegaInput.cancel, true);
         DispatchMegaInput(MegaInput.pauseAndBack, true);
         DispatchMegaInput(MegaInput.cancel, false);
         DispatchMegaInput(MegaInput.pauseAndBack, false);
         GD.Print("[AndroidInput] dispatched Android Back as Escape/cancel");
+    }
+
+    // STS1 mobile: Back = the screen's bottom-left cancel button. Escape (and so
+    // Back) fires both cancel and pauseAndBack. Screens whose back button binds
+    // both already get the PC Escape path. A Skip button bound to cancel alone
+    // (NChoiceSelectionSkipButton on choose-a-card/relic screens) would get the
+    // pause menu opened on top by the same key, so send only cancel there.
+    private static bool ShouldDispatchBackAsScreenCancelOnly()
+    {
+        try
+        {
+            if (!AndroidSettingsBridge.GetBool(BackKeyScreenButtonSetting, true))
+                return false;
+            var manager = NHotkeyManager.Instance;
+            if (manager == null || !GodotObject.IsInstanceValid(manager))
+                return false;
+            if (HotkeyPressedBindingsField?.GetValue(manager) is not Dictionary<StringName, List<Action>> pressed)
+                return false;
+            var cancel = LastBinding(pressed, MegaInput.cancel);
+            if (cancel == null || IsBlockingScreenAction(manager, cancel))
+                return false;
+            if (cancel.Target is not NClickableControl button || !GodotObject.IsInstanceValid(button)
+                || !button.IsEnabled || !button.IsVisibleInTree())
+                return false;
+            var pause = LastBinding(pressed, MegaInput.pauseAndBack);
+            return pause == null || !pause.Equals(cancel);
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Android back screen-button check failed: {exception.Message}");
+            return false;
+        }
+    }
+
+    private static Action LastBinding(Dictionary<StringName, List<Action>> bindings, StringName action)
+    {
+        return bindings.TryGetValue(action, out var list) && list != null && list.Count > 0 ? list[list.Count - 1] : null;
+    }
+
+    private static bool IsBlockingScreenAction(NHotkeyManager manager, Action action)
+    {
+        if (BlockingScreensField?.GetValue(manager) is not Dictionary<Node, Action> blocking)
+            return false;
+        foreach (var value in blocking.Values)
+        {
+            if (ReferenceEquals(value, action))
+                return true;
+        }
+        return false;
     }
 
     private static IEnumerable<(StringName Action, bool Pressed)> EnumerateCompatibleControllerEvents(InputEvent inputEvent)

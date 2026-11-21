@@ -56,7 +56,13 @@ namespace Godot
         public Viewport GetViewport() => Viewport.Shared;
         public Tween CreateTween() => new();
     }
-    public class Control : Node
+    public struct Color
+    {
+        public float R, G, B, A;
+        public Color(float r, float g, float b, float a) { R = r; G = g; B = b; A = a; }
+    }
+    public class CanvasItem : Node { public Color Modulate = new(1f, 1f, 1f, 1f); }
+    public class Control : CanvasItem
     {
         public new static class SignalName { public const string GuiInput = "input"; public const string MouseExited = "mouse-exited"; }
         private bool _visible = true;
@@ -400,6 +406,8 @@ namespace STS2Mobile.Android
         public static bool TouchPreviewEnabled = true;
         public static bool TapGuardEnabled = true;
         public static bool SelectionConfirmationEnabled = true;
+        public static bool IconTapTooltipEnabled = true;
+        public static bool RelicChoiceConfirmationEnabled = true;
         public static int Reads;
         public static string GetString(string key, string fallback) { Reads++; return key == "touch_lift_retap_action" ? RetapAction : Mode; }
         public static int GetInt(string key, int fallback) { Reads++; return fallback; }
@@ -411,6 +419,8 @@ namespace STS2Mobile.Android
                 "touch_lift_preview" => TouchPreviewEnabled,
                 "touch_tap_guard" => TapGuardEnabled,
                 "mobile_selection_confirmation" => SelectionConfirmationEnabled,
+                "mobile_icon_tap_tooltip" => IconTapTooltipEnabled,
+                "mobile_relic_choice_confirmation" => RelicChoiceConfirmationEnabled,
                 _ => fallback,
             };
         }

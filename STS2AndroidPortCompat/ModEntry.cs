@@ -131,6 +131,7 @@ public static class ModEntry
             MapDrawingSceneCachePatches.Apply(_harmony);
             AndroidInputCompatPatches.Apply(_harmony);
             MobileSelectionConfirmationPatches.Apply(_harmony);
+            MobileRelicChoiceConfirmationPatches.Apply(_harmony);
             MerchantSelectionConfirmationPatches.Apply(_harmony);
             MobileTooltipPatches.Apply(_harmony);
             MobileTapPreviewPatches.Apply(_harmony);

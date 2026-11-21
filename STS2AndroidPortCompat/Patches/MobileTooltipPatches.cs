@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.HoverTips;
 using STS2Mobile.Android;
 
@@ -16,11 +17,47 @@ namespace STS2Mobile.Patches;
 /// long-press mode we let the original game create and align the tooltip, hide
 /// it immediately, then reveal it only while the same touch/hover owner is held
 /// long enough.
+/// STS1-mobile icon taps: with <c>mobile_icon_tap_tooltip</c> on (default), a
+/// completed tap on a passive info icon (top-bar stats, potions, creature
+/// powers/intents, energy, orbs, shop relics/potions) keeps that icon's tooltip visible
+/// after the finger lifts, until the next touch anywhere. Cards and buttons
+/// whose tap opens a screen keep the long-press behaviour.
 /// </summary>
 public static class MobileTooltipPatches
 {
     private const string SettingTooltipMode = "mobile_tooltip_mode";
     private const string SettingLongPressMs = "mobile_tooltip_long_press_ms";
+    internal const string SettingIconTapTooltip = "mobile_icon_tap_tooltip";
+    private const int IconAncestorDepth = 4;
+
+    // Owners (or their close ancestors) whose tap does not open another screen.
+    // Excluded on purpose: cards, relic holders (top-bar/history/compendium taps
+    // open the relic inspect screen; the relic choice screen pins explicitly),
+    // multiplayer player rows (tap opens the expanded state), deck/map/pause/
+    // pile/end-turn buttons, map points, event options and treasure relics
+    // (tap acts immediately).
+    private static readonly HashSet<string> IconOwnerTypeNames = new(StringComparer.Ordinal)
+    {
+        "NTopBarBossIcon",
+        "NTopBarFloorIcon",
+        "NTopBarGold",
+        "NTopBarHp",
+        "NTopBarModifier",
+        "NTopBarPortraitTip",
+        "NTopBarRoomIcon",
+        "NPotionHolder",
+        "NLabPotionHolder",
+        "NCreature",
+        "NPower",
+        "NIntent",
+        "NOrb",
+        "NEnergyCounter",
+        "NStarCounter",
+        "NMultiplayerPlayerIntentHandler",
+        "NMerchantRelic",
+        "NMerchantPotion",
+        "NMapLegendItem",
+    };
     private const string ModeImmediate = "immediate";
     private const string ModeLongPress = "long_press";
     private const string ModeHidden = "hidden";
@@ -47,6 +84,9 @@ public static class MobileTooltipPatches
     private static WeakReference<Control> _pendingOwner;
     private static WeakReference<Control> _revealedOwner;
     private static WeakReference<NHoverTipSet> _revealedTip;
+    private static WeakReference<Control> _stickyOwner;
+    private static WeakReference<NHoverTipSet> _stickyTip;
+    private static bool _pressCombatBusy;
     private static int _clearDepth;
     private static bool _forceRemoving;
 
@@ -78,6 +118,7 @@ public static class MobileTooltipPatches
 
     public static void ResetForInputModeChange()
     {
+        ClearSticky();
         ClearPressState(incrementSerial: true);
         if (MobileInputPolicyPatches.UseTouchControls)
             ApplyModeVisibility(GetTooltipMode());
@@ -134,6 +175,15 @@ public static class MobileTooltipPatches
                 return;
             }
 
+            // The game rebuilt the tip of the icon the player last tapped (for
+            // example a creature whose powers changed): keep it on screen.
+            if (!_pressActive && IsStickyOwner(owner))
+            {
+                SetWeak(ref _stickyTip, __result);
+                SetTipVisible(__result, true);
+                return;
+            }
+
             if (!_pressActive)
                 BeginPress(GetCurrentPointerPosition(owner), owner);
 
@@ -164,6 +214,10 @@ public static class MobileTooltipPatches
                 && _pressActive
                 && GetTooltipMode() == ModeLongPress
                 && IsPressOwner(owner);
+            // Keep the tapped owner so a Remove+CreateAndShow refresh stays
+            // visible; the next touch or the owner leaving the tree clears it.
+            if (IsStickyOwner(owner))
+                _stickyTip = null;
             Untrack(owner, preservePressOwner);
         }
         catch (Exception exception)
@@ -196,6 +250,7 @@ public static class MobileTooltipPatches
 
             Owners.Clear();
             Tips.Clear();
+            ClearSticky();
             ClearPressState(incrementSerial: true);
         }
         catch (Exception exception)
@@ -309,7 +364,14 @@ public static class MobileTooltipPatches
 
         if (TryGetReleasePosition(inputEvent, out _))
         {
+            // The owner's GuiInput copy of a release arrives after NGame._Input
+            // already ended the press; it must not hide the tapped icon's tip.
+            if (!_pressActive && Resolve(_stickyOwner) != null)
+                return;
+            var tappedIcon = _pressActive ? GetTapTooltipOwner() : null;
             EndPress(hideTips: true);
+            if (tappedIcon != null)
+                PinOwnerTip(tappedIcon);
             return;
         }
 
@@ -323,6 +385,8 @@ public static class MobileTooltipPatches
     private static void EnsureLongPressTracking(Control owner)
     {
         if (owner == null || !GodotObject.IsInstanceValid(owner))
+            return;
+        if (!_pressActive && IsStickyOwner(owner))
             return;
 
         var current = Resolve(_pendingOwner) ?? Resolve(_revealedOwner);
@@ -339,6 +403,9 @@ public static class MobileTooltipPatches
     private static void BeginPress(Vector2 position, Control owner = null)
     {
         HideAllManagedTips();
+        ClearSticky();
+        // Sampled before the tap-preview/card-play handlers see this press.
+        _pressCombatBusy = IsCombatTapBusy();
         _pressActive = true;
         _longPressElapsed = false;
         _pressSerial++;
@@ -459,7 +526,127 @@ public static class MobileTooltipPatches
 
     private static bool IsRevealedTip(NHoverTipSet tip)
     {
-        return TryResolve(_revealedTip, out var revealedTip) && ReferenceEquals(revealedTip, tip);
+        return (TryResolve(_revealedTip, out var revealedTip) && ReferenceEquals(revealedTip, tip))
+            || (TryResolve(_stickyTip, out var stickyTip) && ReferenceEquals(stickyTip, tip));
+    }
+
+    /// <summary>
+    /// Keeps <paramref name="owner"/>'s current tooltip visible until the next
+    /// touch, like a tapped icon. Used by screens that select an item on tap
+    /// (relic choice confirmation). No-op unless touch long-press mode hides tips.
+    /// </summary>
+    internal static void PinTooltip(Control owner)
+    {
+        try
+        {
+            if (owner == null || !GodotObject.IsInstanceValid(owner) || GetTooltipMode() != ModeLongPress
+                || !MobileInputPolicyPatches.UseTouchControls || IsExplicitDetailOwner(owner))
+                return;
+            if (_pressActive)
+                EndPress(hideTips: true);
+            PinOwnerTip(owner);
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Mobile tooltip pin failed: {exception.Message}");
+        }
+    }
+
+    /// <summary>Hides <paramref name="owner"/>'s pinned tooltip, if it is the pinned one.</summary>
+    internal static void DismissTooltip(Control owner)
+    {
+        try
+        {
+            if (!IsStickyOwner(owner))
+                return;
+            if (TryResolve(_stickyTip, out var tip) && GetTooltipMode() != ModeImmediate)
+                SetTipVisible(tip, false);
+            ClearSticky();
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Mobile tooltip dismiss failed: {exception.Message}");
+        }
+    }
+
+    private static void PinOwnerTip(Control owner)
+    {
+        if (owner == null || !TryGetTip(owner, out var tip))
+            return;
+        HideAllManagedTips(exceptOwner: owner);
+        SetWeak(ref _stickyOwner, owner);
+        SetWeak(ref _stickyTip, tip);
+        SetTipVisible(tip, true);
+    }
+
+    private static void ClearSticky()
+    {
+        _stickyOwner = null;
+        _stickyTip = null;
+    }
+
+    private static bool IsStickyOwner(Control owner)
+    {
+        return owner != null && IsSameOwner(owner, Resolve(_stickyOwner));
+    }
+
+    private static Control GetTapTooltipOwner()
+    {
+        if (_pressCombatBusy || !AndroidSettingsBridge.GetBool(SettingIconTapTooltip, true) || IsCombatTapBusy())
+            return null;
+        var owner = Resolve(_pendingOwner) ?? Resolve(_revealedOwner);
+        return owner != null && !IsExplicitDetailOwner(owner) && IsIconOwner(owner) ? owner : null;
+    }
+
+    private static bool IsCombatTapBusy()
+    {
+        try
+        {
+            var hand = NPlayerHand.Instance;
+            if (hand != null && GodotObject.IsInstanceValid(hand)
+                && (hand.InCardPlay || MobileTapPreviewPatches.GetPinnedHolder(hand) != null))
+                return true;
+            var targeting = NTargetManager.Instance;
+            return targeting != null && targeting.IsInSelection;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsIconOwner(Control owner)
+    {
+        try
+        {
+            if (owner == null)
+                return false;
+            if (!ConnectedOwnerStates.TryGetValue(owner, out var state))
+            {
+                ConnectOwnerInput(owner);
+                if (!ConnectedOwnerStates.TryGetValue(owner, out state))
+                    return false;
+            }
+            if (state.IconClassificationKnown)
+                return state.IsIconOwner;
+            state.IsIconOwner = false;
+            Node node = owner;
+            for (int depth = 0; depth <= IconAncestorDepth && node != null && GodotObject.IsInstanceValid(node); depth++)
+            {
+                if (IconOwnerTypeNames.Contains(node.GetType().Name))
+                {
+                    state.IsIconOwner = true;
+                    break;
+                }
+                node = node.GetParent();
+            }
+            state.IconClassificationKnown = true;
+            return state.IsIconOwner;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void Track(Control owner, NHoverTipSet tip)
@@ -556,6 +743,9 @@ public static class MobileTooltipPatches
             owner.Connect(Node.SignalName.TreeExiting, Callable.From(() =>
             {
                 state.DetailClassificationKnown = false;
+                state.IconClassificationKnown = false;
+                if (IsStickyOwner(owner))
+                    ClearSticky();
                 Untrack(owner);
             }));
         }
@@ -615,6 +805,7 @@ public static class MobileTooltipPatches
 
     private static void ApplyModeVisibility(string mode)
     {
+        ClearSticky();
         if (!MobileInputPolicyPatches.UseTouchControls)
         {
             ClearPressState(incrementSerial: true);
@@ -978,5 +1169,7 @@ public static class MobileTooltipPatches
     {
         public bool DetailClassificationKnown;
         public bool IsDetailOwner;
+        public bool IconClassificationKnown;
+        public bool IsIconOwner;
     }
 }

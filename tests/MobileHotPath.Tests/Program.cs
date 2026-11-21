@@ -27,6 +27,7 @@ internal static class Program
         ConsumerPolicyTests.Run();
         HandContextTests.Run();
         CursorRecoveryTests.Run();
+        CombatSizing();
         Console.WriteLine("PASS: tooltip/intent hot paths and consumer-visible touch, hardware, desktop and input-mode reset boundaries.");
     }
 
@@ -143,6 +144,23 @@ internal static class Program
         target = new NTargetManager { HoveredNode = new Node() };
         target._Input(new InputEventScreenTouch { Pressed = false });
         Require(!target.Cancelled, "release over a target remains original targeting");
+    }
+
+    private static void CombatSizing()
+    {
+        const float eps = 0.0001f;
+        Require(Math.Abs(MobileCombatSizing.Factor(110, 100, 130) - 1.1f) < eps, "hand card percent maps to factor");
+        Require(Math.Abs(MobileCombatSizing.Factor(500, 100, 130) - 1.3f) < eps && Math.Abs(MobileCombatSizing.Factor(0, 100, 130) - 1f) < eps,
+            "corrupt saved percent is clamped to the offered range");
+        Require(MobileCombatSizing.HandSpread(1f, 610f, 102f, 1063f) == 1f, "100% keeps the vanilla row");
+        // 10 cards on a 2127-unit-wide phone canvas: plenty of room, spread follows the card size.
+        Require(Math.Abs(MobileCombatSizing.HandSpread(1.1f, 610f, 112f, 1063f) - 1.1f) < eps, "wide phone spreads the row with the cards");
+        // Narrow canvas: outermost card edge stops at the side margin.
+        float spread = MobileCombatSizing.HandSpread(1.3f, 610f, 133f, 800f);
+        Require(spread > 1f && spread < 1.3f && Math.Abs(610f * spread + 133f - (800f - MobileCombatSizing.HandEdgeMargin)) < 0.01f,
+            "row is clamped so the outer card stays on screen");
+        Require(MobileCombatSizing.HandSpread(1.3f, 610f, 300f, 700f) == 1f, "never squeezes the row tighter than vanilla");
+        Require(MobileCombatSizing.HandSpread(1.2f, 0f, 120f, 0f) == 1.2f, "single card / unknown screen keeps the plain factor");
     }
 
     private static void Require(bool condition, string message)

@@ -37,6 +37,8 @@ public static class AndroidSettingsMerge
         "ui_font_scale_percent",
         "show_more_hand_card_text",
         "show_more_hand_card_text_lift_height_percent",
+        "mobile_hand_card_scale_percent",
+        "mobile_combat_button_scale_percent",
         "touch_lift_preview",
         "touch_lift_retap_action",
         "mobile_hand_scrub",

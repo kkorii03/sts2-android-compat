@@ -52,7 +52,10 @@ public static class MerchantSelectionConfirmationPatches
                 entry.Value.PendingPurchaseSlot.ReleaseFocus();
             entry.Value.PendingPurchaseSlot = null;
             if (GodotObject.IsInstanceValid(entry.Value.ConfirmButton))
+            {
                 entry.Value.ConfirmButton.Disable();
+                MobileConfirmPlacement.Hide(entry.Value.ConfirmButton);
+            }
         }
         lock (AllowedPurchasesLock)
             AllowedPurchases.Clear();
@@ -160,6 +163,7 @@ public static class MerchantSelectionConfirmationPatches
             button.Name = ConfirmButtonName;
             button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ => OnConfirmButtonReleased(inventory)));
             button.Disable();
+            MobileConfirmPlacement.Hide(button);
             state.ConfirmButton = button;
             PatchHelper.Log("Merchant mobile selection confirmation button ready.");
         }
@@ -238,9 +242,15 @@ public static class MerchantSelectionConfirmationPatches
             && state.PendingPurchaseSlot != null
             && GodotObject.IsInstanceValid(state.PendingPurchaseSlot)
             && state.PendingPurchaseSlot.Entry?.IsStocked == true)
+        {
             button.Enable();
+            MobileConfirmPlacement.ShowNear(button, state.PendingPurchaseSlot);
+        }
         else
+        {
             button.Disable();
+            MobileConfirmPlacement.Hide(button);
+        }
     }
 
     private static bool ShouldConfirmSlotSelection(NMerchantSlot slot, out NMerchantInventory inventory)

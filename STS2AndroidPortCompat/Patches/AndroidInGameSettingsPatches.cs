@@ -285,6 +285,7 @@ public static class AndroidInGameSettingsPatches
             }, "put_down", null);
         AddSwitchRow(content, "mobile_hand_scrub", T("滑动浏览手牌", "Slide to browse hand"), true, null);
         AddSwitchRow(content, "mobile_selection_confirmation", T("手机选择二次确认", "Mobile selection confirmation"), true, null);
+        AddSwitchRow(content, "mobile_confirm_near_thumb", T("确认按钮靠近所选项", "Confirm button near selection"), true, null);
         AddSwitchRow(content, "mobile_two_finger_inspect", T("双指查看", "Two-finger inspect"), true, null);
 
         AddHeader(content, T("系统 / 兼容", "System / Compatibility"));

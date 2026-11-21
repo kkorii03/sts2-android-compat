@@ -41,6 +41,7 @@ public static class AndroidSettingsMerge
         "touch_lift_retap_action",
         "mobile_hand_scrub",
         "mobile_selection_confirmation",
+        "mobile_confirm_near_thumb",
         "mobile_two_finger_inspect",
         "mobile_tooltip_mode",
         "mobile_tooltip_long_press_ms",

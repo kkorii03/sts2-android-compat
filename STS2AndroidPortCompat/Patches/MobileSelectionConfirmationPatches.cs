@@ -56,7 +56,7 @@ public static class MobileSelectionConfirmationPatches
                 entry.Value.SelectedHolder.ReleaseFocus();
             entry.Value.SelectedHolder = null;
             if (GodotObject.IsInstanceValid(entry.Value.ConfirmButton))
-                entry.Value.ConfirmButton.Disable();
+                DisableConfirm(entry.Value.ConfirmButton);
         }
     }
 
@@ -115,14 +115,30 @@ public static class MobileSelectionConfirmationPatches
 
     public static void OverlayHiddenPostfix(Node __instance)
     {
-        GetState(__instance)?.ConfirmButton?.Disable();
+        DisableConfirm(GetState(__instance)?.ConfirmButton);
     }
 
     public static void OverlayShownPostfix(Node __instance)
     {
         var state = GetState(__instance);
         if (IsEnabled() && state?.SelectedHolder != null)
-            state.ConfirmButton?.Enable();
+            EnableConfirm(state.ConfirmButton, state.SelectedHolder);
+    }
+
+    private static void EnableConfirm(NConfirmButton button, NCardHolder anchor)
+    {
+        if (button == null || !GodotObject.IsInstanceValid(button))
+            return;
+        button.Enable();
+        MobileConfirmPlacement.ShowNear(button, anchor);
+    }
+
+    private static void DisableConfirm(NConfirmButton button)
+    {
+        if (button == null || !GodotObject.IsInstanceValid(button))
+            return;
+        button.Disable();
+        MobileConfirmPlacement.Hide(button);
     }
 
     private static void EnsureConfirmButton(Node screen, Action<Node> onConfirm)
@@ -144,7 +160,7 @@ public static class MobileSelectionConfirmationPatches
                 screen.AddChild(button);
             button.Name = ConfirmButtonName;
             button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ => onConfirm(screen)));
-            button.Disable();
+            DisableConfirm(button);
             state.ConfirmButton = button;
             PatchHelper.Log($"Mobile selection confirmation button ready on {screen.GetType().Name}.");
         }
@@ -172,7 +188,7 @@ public static class MobileSelectionConfirmationPatches
             SetPinnedPreview(holder, true);
             holder.TryGrabFocus();
         }
-        state.ConfirmButton?.Enable();
+        EnableConfirm(state.ConfirmButton, holder);
     }
 
     private static void ConfirmRewardSelection(Node screen)
@@ -221,7 +237,7 @@ public static class MobileSelectionConfirmationPatches
             SetPinnedPreview(state.SelectedHolder, false);
         state.SelectedHolder = null;
         if (disableConfirm)
-            state.ConfirmButton?.Disable();
+            DisableConfirm(state.ConfirmButton);
     }
 
     private static void SetPinnedPreview(NCardHolder holder, bool pinned)

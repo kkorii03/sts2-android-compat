@@ -260,6 +260,8 @@ public static class AndroidInGameSettingsPatches
         AddHeader(content, T("触摸 / 手牌", "Touch / Hand"));
         AddSwitchRow(content, "show_more_hand_card_text", T("显示更多手牌文字", "Show more hand-card text"), true, _ => RefreshHandLayout());
         AddIntPaginatorRow(content, "show_more_hand_card_text_lift_height_percent", T("手牌抬起高度", "Hand-card lift height"), Range(25, 100, 5), 50, v => $"{v}%", _ => RefreshHandLayout());
+        AddIntPaginatorRow(content, MobileCombatSizing.HandCardScaleKey, T("手牌大小", "Hand card size"), Range(MobileCombatSizing.HandCardScaleMin, MobileCombatSizing.HandCardScaleMax, 5), MobileCombatSizing.HandCardScaleDefault, v => $"{v}%", _ => RefreshHandLayout());
+        AddIntPaginatorRow(content, MobileCombatSizing.CombatButtonScaleKey, T("结束回合/能量大小", "End turn / energy size"), Range(MobileCombatSizing.CombatButtonScaleMin, MobileCombatSizing.CombatButtonScaleMax, 5), MobileCombatSizing.CombatButtonScaleDefault, v => $"{v}%", _ => MobileCombatHudPatches.ApplyToCurrentCombat());
         AddSwitchRow(content, "touch_lift_preview", T("抬起触摸时预览", "Touch-lift preview"), true, enabled =>
         {
             if (!enabled)

@@ -14,6 +14,7 @@
     <Compile Include="../../STS2AndroidPortCompat/Patches/TouchInputPatches.cs" Link="TouchInputPatches.cs" />
     <Compile Include="../../STS2AndroidPortCompat/Patches/MobileTapPreviewPatches.cs" Link="MobileTapPreviewPatches.cs" />
     <Compile Include="../../STS2AndroidPortCompat/Patches/MobileHandScrubPatches.cs" Link="MobileHandScrubPatches.cs" />
+    <Compile Include="../../STS2AndroidPortCompat/Patches/MobileCombatSizing.cs" Link="MobileCombatSizing.cs" />
     <Compile Include="../../STS2AndroidPortCompat/Patches/MobileSelectionConfirmationPatches.cs" Link="MobileSelectionConfirmationPatches.cs" />
     <Compile Include="$(MerchantConfirmationSource)" Link="MerchantSelectionConfirmationPatches.cs" />
     <Reference Include="0Harmony"><HintPath>$(HarmonyReferenceDir)/0Harmony.dll</HintPath></Reference>

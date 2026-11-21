@@ -18,7 +18,8 @@ internal static class Program
             File.WriteAllText(AndroidSettingsBridge.SettingsPath,
                 "{\"volume_master\":0.75,\"android_compat_pack_enabled\":false,\"android_builtin_full_keyboard\":false,\"android_floating_keyboard_enabled\":true,"
                 + "\"preload_enabled\":false,\"preload_render_warmup_enabled\":true,\"preload_runtime_enabled\":false,"
-                + "\"preload_vfx_tree_warmup_enabled\":false,\"preload_combat_animation_warmup_mode\":\"safe\"}");
+                + "\"preload_vfx_tree_warmup_enabled\":false,\"preload_combat_animation_warmup_mode\":\"safe\","
+                + "\"mobile_hand_card_scale_percent\":120,\"mobile_combat_button_scale_percent\":100}");
             string beforeSave = File.ReadAllText(AndroidSettingsBridge.SettingsPath);
 
             // A typed game settings save discards fields it does not own.
@@ -40,6 +41,9 @@ internal static class Program
                 || saved["preload_vfx_tree_warmup_enabled"]?.GetValue<bool>() != false
                 || saved["preload_combat_animation_warmup_mode"]?.GetValue<string>() != "safe")
                 throw new InvalidOperationException("Saving render-replica warmup preferences changed independent master, runtime, or legacy warmup choices.");
+            if (saved["mobile_hand_card_scale_percent"]?.GetValue<int>() != 120
+                || saved["mobile_combat_button_scale_percent"]?.GetValue<int>() != 100)
+                throw new InvalidOperationException("Saving in-game settings lost the phone hand-card / combat-button size choices.");
             if (saved["volume_master"]?.GetValue<double>() != 0.25)
                 throw new InvalidOperationException("Merging Android preferences rolled back the game's new volume setting.");
             Console.WriteLine("PASS settings serialization round-trip: " + saved.ToJsonString());

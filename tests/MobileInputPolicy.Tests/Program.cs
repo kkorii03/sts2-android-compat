@@ -84,3 +84,38 @@ Require(policy.ObserveMouseButton(false, 1, true, false), "A fresh mouse press m
 Require(!policy.UseTouchControls, "Reset cannot strand the policy behind stale touch ownership.");
 
 Console.WriteLine("PASS: automatic input switching, complete touch/emulated/mouse gesture ownership, competing stream suppression, movement thresholds and lifecycle reset.");
+
+// Grid/list touch scrolling (MobileGridTouchScrollPatches): slop, overscroll damping, release velocity, fling.
+Require(!MobileScrollGestureMath.ExceedsSlop(10, 20, 24), "A 22-unit wobble during a tap must stay a tap.");
+Require(MobileScrollGestureMath.ExceedsSlop(0, -24, 24), "Reaching the slop starts a drag.");
+Require(MobileScrollGestureMath.ExceedsSlop(30, 0, 24), "A sideways drag past the slop is still a drag and must never click on release.");
+
+Require(MobileScrollGestureMath.ApplyDrag(-100, -50, -1000, 0, 0.4f) == -150, "Inside the range the content follows the finger 1:1.");
+Require(MobileScrollGestureMath.ApplyDrag(0, 10, -1000, 0, 0.4f) == 4, "Pulling past the top is damped.");
+Require(MobileScrollGestureMath.ApplyDrag(-990, -20, -1000, 0, 0.4f) == -1004, "Only the part beyond the bottom limit is damped.");
+Require(MobileScrollGestureMath.ApplyDrag(8, -10, -1000, 0, 0.4f) == -2, "Pushing back from overscroll is not damped.");
+Require(MobileScrollGestureMath.ApplyDrag(-100, 10, 0, -1000, 0.4f) == -90, "Limits may arrive in either order.");
+
+var tracker = new MobileScrollGestureMath.VelocityTracker();
+Require(tracker.Estimate(0) == 0f, "No samples means no fling.");
+for (ulong t = 0; t <= 80_000; t += 16_000)
+    tracker.Add(1_000_000 + t, -(t / 1_000_000f) * 2000f);
+var velocity = tracker.Estimate(1_080_000);
+Require(Math.Abs(velocity + 2000f) < 1f, $"A steady 2000/s upward swipe must be measured as such, got {velocity}.");
+Require(tracker.Estimate(1_080_000 + 200_000) == 0f, "Resting the finger before lifting cancels the fling.");
+tracker.Reset();
+tracker.Add(5_000_000, 0f);
+tracker.Add(5_002_000, 500f);
+Require(tracker.Estimate(5_002_000) == 0f, "Two samples 2 ms apart are noise, not a fling.");
+
+float flingTarget = -500f, flingVelocity = -3000f;
+var steps = 0;
+while (MobileScrollGestureMath.StepFling(ref flingTarget, ref flingVelocity, 1f / 60f, 4f, -100_000f, 0f, 25f))
+    steps++;
+Require(steps > 30 && steps < 200 && Math.Abs(flingVelocity) < 25f, $"A fling decays to a stop in a sensible time ({steps} frames).");
+Require(flingTarget < -1000f && flingTarget > -1350f, $"Fling travel is roughly v/friction ({flingTarget}).");
+flingTarget = -50f; flingVelocity = 3000f;
+Require(!MobileScrollGestureMath.StepFling(ref flingTarget, ref flingVelocity, 1f / 30f, 4f, -1000f, 0f, 25f) && flingTarget > 0f,
+    "A fling that crosses the top limit stops and leaves the overscroll to the game's bounce-back.");
+Require(MobileScrollGestureMath.ClampMagnitude(-9000f, 6000f) == -6000f, "Fling speed is capped.");
+Console.WriteLine("PASS: grid touch scroll slop, overscroll damping, release velocity and fling decay.");

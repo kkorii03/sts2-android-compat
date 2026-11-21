@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../STS2AndroidPortCompat/Patches/MobileInputPolicy.cs" Link="MobileInputPolicy.cs" />
+    <Compile Include="../../STS2AndroidPortCompat/Patches/MobileScrollGestureMath.cs" Link="MobileScrollGestureMath.cs" />
   </ItemGroup>
 </Project>

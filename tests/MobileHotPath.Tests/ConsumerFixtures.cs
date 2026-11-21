@@ -205,6 +205,8 @@ namespace MegaCrit.Sts2.Core.Nodes.Combat
         [MethodImpl(MethodImplOptions.NoInlining)]
         public void OnHolderFocused(NHandCardHolder holder) { FocusedHolder = holder; }
         [MethodImpl(MethodImplOptions.NoInlining)]
+        public void OnHolderUnfocused(NHandCardHolder holder) { FocusedHolder = null; }
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private void StartCardPlay(NHandCardHolder holder, bool startedViaShortcut) { CardPlays++; InCardPlay = true; }
         [MethodImpl(MethodImplOptions.NoInlining)] public void CancelAllCardPlay() { InCardPlay = false; }
         [MethodImpl(MethodImplOptions.NoInlining)] public void OnCombatEnded() { }

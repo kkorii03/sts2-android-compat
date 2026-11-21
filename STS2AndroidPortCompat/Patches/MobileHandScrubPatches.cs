@@ -34,7 +34,9 @@ public static class MobileHandScrubPatches
 
     public static void Apply(Harmony harmony)
     {
-        PatchHelper.Patch(harmony, typeof(NGame), "_Input", prefix: PatchHelper.Method(typeof(MobileHandScrubPatches), nameof(GameInputPrefix)));
+        PatchHelper.Patch(harmony, typeof(NGame), "_Input",
+            prefix: PatchHelper.Method(typeof(MobileHandScrubPatches), nameof(GameInputPrefix)),
+            postfix: PatchHelper.Method(typeof(MobileHandScrubPatches), nameof(GameInputPostfix)));
         PatchHelper.Patch(harmony, typeof(NPlayerHand), "OnHolderUnfocused", postfix: PatchHelper.Method(typeof(MobileHandScrubPatches), nameof(OnHolderUnfocusedPostfix)));
     }
 
@@ -42,18 +44,10 @@ public static class MobileHandScrubPatches
     {
         try
         {
-            switch (inputEvent)
+            if (inputEvent is InputEventScreenDrag drag && drag.Index == _touchIndex && HandleDrag(drag.Position))
             {
-                case InputEventScreenTouch touch:
-                    HandleTouch(touch);
-                    break;
-                case InputEventScreenDrag drag when drag.Index == _touchIndex:
-                    if (HandleDrag(drag.Position))
-                    {
-                        __instance.GetViewport()?.SetInputAsHandled();
-                        return false;
-                    }
-                    break;
+                __instance.GetViewport()?.SetInputAsHandled();
+                return false;
             }
         }
         catch (Exception exception)
@@ -64,14 +58,32 @@ public static class MobileHandScrubPatches
         return true;
     }
 
-    public static void OnHolderUnfocusedPostfix(NPlayerHand __instance, NHandCardHolder holder)
+    // Finger bookkeeping lives in a postfix: postfixes run even when an earlier
+    // _Input prefix consumed the event and skipped this patch's prefix, so a
+    // swallowed release can never leave a finger "down" forever.
+    public static void GameInputPostfix(InputEvent inputEvent)
     {
         try
         {
-            if (!IsEnabled() || __instance.FocusedHolder != null || __instance.CurrentMode != NPlayerHand.Mode.Play || __instance.InCardPlay)
+            if (inputEvent is InputEventScreenTouch touch)
+                HandleTouch(touch);
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Mobile hand scrub touch tracking failed: {exception.Message}");
+            StopTracking();
+        }
+    }
+
+    // Vanilla OnHolderUnfocused clears FocusedHolder on any hover exit, the pinned
+    // card's own included; a pinned card must stay lifted, so re-assert it.
+    public static void OnHolderUnfocusedPostfix(NPlayerHand __instance)
+    {
+        try
+        {
+            if (!MobileTapPreviewPatches.IsTapPreviewEnabled() || __instance.FocusedHolder != null || __instance.CurrentMode != NPlayerHand.Mode.Play || __instance.InCardPlay)
                 return;
-            var pinned = MobileTapPreviewPatches.GetPinnedHolder(__instance);
-            if (pinned == null || (ReferenceEquals(pinned, holder) && !_scrubbing))
+            if (MobileTapPreviewPatches.GetPinnedHolder(__instance) == null)
                 return;
             MobileTapPreviewPatches.ReassertPinnedFocus(__instance);
         }
@@ -189,13 +201,7 @@ public static class MobileHandScrubPatches
     // Top edge of the resting (unpinned) hand; the lifted pinned card is ignored.
     private static float GetHandTopY(NPlayerHand hand, NHandCardHolder pinned)
     {
-        var top = float.MaxValue;
-        foreach (var holder in hand.ActiveHolders)
-        {
-            if (ReferenceEquals(holder, pinned) || !GodotObject.IsInstanceValid(holder) || holder.Hitbox == null)
-                continue;
-            top = Mathf.Min(top, holder.Hitbox.GetGlobalRect().Position.Y);
-        }
+        var top = MobileTapPreviewPatches.GetRestingHandTopY(hand, pinned);
         return top < float.MaxValue ? top : hand.GetViewport().GetVisibleRect().Size.Y * 0.75f;
     }
 

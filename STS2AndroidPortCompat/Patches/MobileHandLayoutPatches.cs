@@ -12,9 +12,6 @@ namespace STS2Mobile.Patches;
 
 public static class MobileHandLayoutPatches
 {
-    // Each resting card's Position/Scale just before vanilla RefreshLayout, by instance id.
-    private static readonly Dictionary<ulong, (Vector2 Position, Vector2 Scale)> PreLayout = new();
-
     public static void Apply(Harmony harmony)
     {
         PatchHelper.Patch(harmony, typeof(NPlayerHand), "RefreshLayout",
@@ -22,7 +19,10 @@ public static class MobileHandLayoutPatches
             postfix: PatchHelper.Method(typeof(MobileHandLayoutPatches), nameof(RefreshLayoutPostfix)));
     }
 
-    public static void RefreshLayoutPostfix(object __instance)
+    // __state is each call's own capture (each card's Position/Scale just before
+    // vanilla RefreshLayout, by instance id), so a nested RefreshLayout (hover
+    // signal during layout) cannot clear the outer call's snapshot.
+    public static void RefreshLayoutPostfix(object __instance, Dictionary<ulong, (Vector2 Position, Vector2 Scale)> __state)
     {
         try
         {
@@ -45,8 +45,9 @@ public static class MobileHandLayoutPatches
                 return;
 
             // Bigger cards: grow every resting card and spread the row by the same amount
-            // (clamped to the screen) so they overlap no more than vanilla. The focused or
-            // pinned card keeps vanilla scale/height and only follows the spread sideways.
+            // (clamped to the screen) so they overlap no more than vanilla. The focused
+            // (lifted, normally the pinned) card keeps vanilla scale/height and only
+            // follows the spread sideways.
             // Bigger resting cards grow downward (top edge stays at vanilla), like STS1 mobile.
             var baseScale = HandPosHelper.GetScale(holders.Count);
             var spread = cardFactor > 1f ? GetHandSpread(holders, baseScale, cardFactor) : 1f;
@@ -56,7 +57,8 @@ public static class MobileHandLayoutPatches
                 var target = holder.TargetPosition;
                 var restingY = target.Y + yOffset + MobileCombatSizing.GrowDownOffset(holder.Hitbox?.Size.Y ?? 0f, baseScale.Y, cardFactor);
                 var newTarget = new Vector2(target.X * spread, focused ? target.Y : restingY);
-                var hasBefore = PreLayout.TryGetValue(holder.GetInstanceId(), out var before);
+                (Vector2 Position, Vector2 Scale) before = default;
+                var hasBefore = __state != null && __state.TryGetValue(holder.GetInstanceId(), out before);
                 if (newTarget != target)
                 {
                     // Vanilla's SetTarget* already took one animation step toward its own
@@ -77,38 +79,39 @@ public static class MobileHandLayoutPatches
         {
             PatchHelper.Log($"Mobile hand layout offset failed: {exception.Message}");
         }
-        finally
-        {
-            PreLayout.Clear();
-        }
     }
 
-    public static void RefreshLayoutPrefix(object __instance)
+    public static void RefreshLayoutPrefix(object __instance, out Dictionary<ulong, (Vector2 Position, Vector2 Scale)> __state)
     {
-        PreLayout.Clear();
+        __state = null;
         try
         {
             if (Mathf.IsZeroApprox(GetAdditionalHandCardYOffset()) && GetHandCardScaleFactor() <= 1f)
                 return;
             if (__instance.GetType().GetProperty("ActiveHolders", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(__instance) is not System.Collections.IEnumerable activeHolders)
                 return;
+            var capture = new Dictionary<ulong, (Vector2 Position, Vector2 Scale)>();
             foreach (var item in activeHolders)
             {
                 if (item is NHandCardHolder holder && GodotObject.IsInstanceValid(holder))
-                    PreLayout[holder.GetInstanceId()] = (holder.Position, holder.Scale);
+                    capture[holder.GetInstanceId()] = (holder.Position, holder.Scale);
             }
+            __state = capture;
         }
         catch (Exception exception)
         {
-            PreLayout.Clear();
+            __state = null;
             PatchHelper.Log($"Mobile hand layout capture failed: {exception.Message}");
         }
     }
 
+    // "Focused" means exactly the card vanilla RefreshLayout lifted (FocusedHolder).
+    // A pinned card is normally that card (the tap preview keeps FocusedHolder on
+    // it); if vanilla laid it out as a resting card anyway, treating it as focused
+    // here would leave it at vanilla resting height and scale, smaller than and
+    // sunk into the enlarged row, so it gets the resting adjustments like its neighbours.
     private static bool IsFocusedHolder(object playerHand, NHandCardHolder holder)
     {
-        if (MobileTapPreviewPatches.IsPinned(holder))
-            return true;
         var focused = playerHand.GetType().GetProperty("FocusedHolder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(playerHand);
         return ReferenceEquals(focused, holder);
     }

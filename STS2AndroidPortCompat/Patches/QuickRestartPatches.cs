@@ -90,7 +90,7 @@ public static class QuickRestartPatches
         return false;
     }
 
-    private static string GetRetryLabel() => "zhs".Equals(GetCurrentLanguage(), StringComparison.OrdinalIgnoreCase) ? "重打" : "Retry";
+    private static string GetRetryLabel() => "zhs".Equals(GetCurrentLanguage(), StringComparison.OrdinalIgnoreCase) ? "重打" : ModText.Ko("Retry", "다시 하기");
 
     private static string GetCurrentLanguage()
     {
@@ -176,7 +176,7 @@ public static class QuickRestartPatches
             var loadResult = SaveManager.Instance.LoadRunSave();
             if (!loadResult.Success || loadResult.SaveData == null)
             {
-                ShowError($"Quick restart failed: could not read autosave. Status={loadResult.Status}");
+                ShowError(ModText.Ko($"Quick restart failed: could not read autosave. Status={loadResult.Status}", $"빠른 다시 하기 실패: 자동 저장을 읽을 수 없습니다. 상태={loadResult.Status}"));
                 return;
             }
             var saveData = loadResult.SaveData;
@@ -198,7 +198,7 @@ public static class QuickRestartPatches
             PatchHelper.Log($"Built-in Android quick restart failed: {exception}");
             if (fadeOutCompleted)
                 await TryFadeInAfterQuickRestartFailureAsync();
-            ShowError("Quick restart failed: " + exception.Message);
+            ShowError(ModText.Ko("Quick restart failed: ", "빠른 다시 하기 실패: ") + exception.Message);
         }
     }
 
@@ -276,7 +276,7 @@ public static class QuickRestartPatches
     {
         try
         {
-            var popup = NErrorPopup.Create("Quick restart", message, false);
+            var popup = NErrorPopup.Create(ModText.Ko("Quick restart", "빠른 다시 하기"), message, false);
             if (popup != null)
                 NModalContainer.Instance?.Add(popup);
         }

@@ -413,7 +413,7 @@ public static class LifecycleAndPerformancePatches
         PatchHelper.Log($"Android common/main-menu preload begin: {assetPaths.Count:N0} resources.");
         if (IsPreloadDebugEnabled())
             LogAssetPathSummary("common/main-menu collection", assetPaths);
-        loadingScreen?.SetStatus("Optimizing startup...", $"Preparing {assetPaths.Count:N0} resources", 0.05f);
+        loadingScreen?.SetStatus("Optimizing startup...", ModText.Ko($"Preparing {assetPaths.Count:N0} resources", $"리소스 {assetPaths.Count:N0}개 준비 중"), 0.05f);
         int loaded = 0;
         int cachedBefore = 0;
         int loadedNow = 0;
@@ -452,11 +452,11 @@ public static class LifecycleAndPerformancePatches
             if ((loaded % 8) == 0)
             {
                 float progress = assetPaths.Count == 0 ? 1f : 0.05f + (0.9f * loaded / assetPaths.Count);
-                loadingScreen?.SetStatus("Optimizing startup...", $"Preloading {loaded:N0}/{assetPaths.Count:N0}: {GetResourceDisplayName(path)}", progress);
+                loadingScreen?.SetStatus("Optimizing startup...", ModText.Ko("Preloading ", "미리 불러오는 중 ") + $"{loaded:N0}/{assetPaths.Count:N0}: {GetResourceDisplayName(path)}", progress);
                 await WaitForFramesAsync(1);
             }
         }
-        loadingScreen?.SetStatus("Optimizing startup...", $"Preloaded {loaded:N0}/{assetPaths.Count:N0} resources", 0.98f);
+        loadingScreen?.SetStatus("Optimizing startup...", ModText.Ko($"Preloaded {loaded:N0}/{assetPaths.Count:N0} resources", $"리소스 {loaded:N0}/{assetPaths.Count:N0}개 미리 불러옴"), 0.98f);
         PatchHelper.Log($"Android common/main-menu preload complete: visited={loaded:N0}/{assetPaths.Count:N0} loaded_now={loadedNow:N0} cached_before={cachedBefore:N0} null={nullLoads:N0} failed={failed:N0} elapsed={Time.GetTicksMsec() - started:N0}ms.");
         if (IsPreloadDebugEnabled())
             LogResourceStats("common/main-menu serialized preload detailed");
@@ -557,7 +557,7 @@ public static class LifecycleAndPerformancePatches
             }
         }
 
-        loadingScreen?.SetStatus(title, $"Preloaded {loaded:N0}/{assetPaths.Count:N0} gameplay resources", progressEnd);
+        loadingScreen?.SetStatus(title, ModText.Ko($"Preloaded {loaded:N0}/{assetPaths.Count:N0} gameplay resources", $"게임 리소스 {loaded:N0}/{assetPaths.Count:N0}개 미리 불러옴"), progressEnd);
         PatchHelper.Log($"Android gameplay warm cache preload complete: visited={loaded:N0}/{assetPaths.Count:N0} loaded_now={loadedNow:N0} cached_before={cachedBefore:N0} null={nullLoads:N0} failed={failed:N0} elapsed={Time.GetTicksMsec() - started:N0}ms.");
     }
 
@@ -1037,7 +1037,7 @@ public static class LifecycleAndPerformancePatches
                 Type submenuType = game.GetType().Assembly.GetType(hotTypeNames[i]);
                 if (submenuType == null)
                     continue;
-                startupLoadingScreen?.SetStatus("Loading main menu...", $"Preparing menu {i + 1}/{hotTypeNames.Length}", 0.975f + (0.01f * i));
+                startupLoadingScreen?.SetStatus("Loading main menu...", ModText.Ko($"Preparing menu {i + 1}/{hotTypeNames.Length}", $"메뉴 준비 중 {i + 1}/{hotTypeNames.Length}"), 0.975f + (0.01f * i));
                 using var phase = EnterPreloadPhase($"menu-hotspot:{submenuType.Name}");
                 getSubmenuType.Invoke(submenuStack, new object[] { submenuType });
                 await game.ToSignal(game.GetTree(), SceneTree.SignalName.ProcessFrame);

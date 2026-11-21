@@ -974,7 +974,7 @@ public static class AndroidInGameSettingsPatches
         }
     }
 
-    private static string T(string zh, string en) => IsZh() ? zh : en;
+    private static string T(string zh, string en) => IsZh() ? zh : ModText.Ko(en);
 
     private static bool IsZh()
     {

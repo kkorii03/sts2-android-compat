@@ -534,7 +534,7 @@ public static class LanMultiplayerPatches
 
     private static string NormalizeText(string raw) => (raw ?? string.Empty).Trim().Normalize(NormalizationForm.FormKC);
 
-    private static string T(string zh, string en) => IsZh() ? zh : en;
+    private static string T(string zh, string en, string ko) => IsZh() ? zh : ModText.Ko(en, ko);
 
     private static bool IsZh()
     {
@@ -560,7 +560,7 @@ public static class LanMultiplayerPatches
         if (string.IsNullOrWhiteSpace(host))
         {
             port = 0;
-            error = T("请输入房主 IP 地址。", "Enter the host IP address.");
+            error = T("请输入房主 IP 地址。", "Enter the host IP address.", "호스트 IP 주소를 입력하세요.");
             return false;
         }
         if (string.IsNullOrWhiteSpace(portText))
@@ -571,7 +571,7 @@ public static class LanMultiplayerPatches
         }
         if (!ushort.TryParse(portText, out port) || port == 0)
         {
-            error = T("端口必须是 1 到 65535 之间的数字。", "Port must be a number from 1 to 65535.");
+            error = T("端口必须是 1 到 65535 之间的数字。", "Port must be a number from 1 to 65535.", "포트는 1~65535 사이의 숫자여야 합니다.");
             return false;
         }
         error = string.Empty;
@@ -632,7 +632,7 @@ public static class LanMultiplayerPatches
     private static void ConfigureLanJoinScreen(NJoinFriendScreen screen)
     {
         var title = screen.GetNodeOrNull<MegaLabel>("TitleLabel");
-        title?.SetTextAutoSize(T("加入局域网游戏", "Join LAN Game"));
+        title?.SetTextAutoSize(T("加入局域网游戏", "Join LAN Game", "LAN 게임 참가"));
 
         var buttonContainer = screen.GetNodeOrNull<Control>("%ButtonContainer");
         if (buttonContainer != null)
@@ -649,7 +649,7 @@ public static class LanMultiplayerPatches
         container.Visible = true;
 
         var helpLabel = container.GetNodeOrNull<MegaLabel>("LanHelpLabel");
-        helpLabel?.SetTextAutoSize(T($"房主先在同一 Wi‑Fi / 局域网内开房，然后在这里输入房主 IP 和端口加入。默认端口：{DefaultPort}。也可以直接输入 IP:端口。", $"Host a game on the same Wi‑Fi / LAN, then enter the host IP and port here. Default port: {DefaultPort}. You can also enter IP:port."));
+        helpLabel?.SetTextAutoSize(T($"房主先在同一 Wi‑Fi / 局域网内开房，然后在这里输入房主 IP 和端口加入。默认端口：{DefaultPort}。也可以直接输入 IP:端口。", $"Host a game on the same Wi‑Fi / LAN, then enter the host IP and port here. Default port: {DefaultPort}. You can also enter IP:port.", $"같은 Wi-Fi / LAN에서 호스트가 방을 연 뒤, 여기에 호스트 IP와 포트를 입력해 참가하세요. 기본 포트: {DefaultPort}. IP:포트 형식으로 입력해도 됩니다."));
 
         var hostInput = container.GetNode<LineEdit>("LanHostRow/LanHostInput");
         var portInput = container.GetNode<LineEdit>("LanPortRow/LanPortInput");
@@ -662,7 +662,7 @@ public static class LanMultiplayerPatches
         if (refreshButton != null)
         {
             var label = refreshButton.GetNodeOrNull<MegaLabel>("Label");
-            label?.SetTextAutoSize(T("加入", "Join"));
+            label?.SetTextAutoSize(T("加入", "Join", "참가"));
             var icon = refreshButton.GetNodeOrNull<Control>("ControllerIcon");
             if (icon != null)
                 icon.Visible = false;
@@ -692,12 +692,12 @@ public static class LanMultiplayerPatches
         };
         container.AddThemeConstantOverride("separation", 18);
 
-        var help = MakeMegaLabel("LanHelpLabel", T("输入房主局域网 IP 和端口加入。", "Join the host by entering their LAN IP and port."), 26, Colors.White);
+        var help = MakeMegaLabel("LanHelpLabel", T("输入房主局域网 IP 和端口加入。", "Join the host by entering their LAN IP and port.", "호스트의 LAN IP와 포트를 입력해 참가하세요."), 26, Colors.White);
         help.CustomMinimumSize = new Vector2(0, 72);
         help.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         container.AddChild(help);
-        container.AddChild(MakeInputRow("LanHostRow", "LanHostLabel", T("房主 IP", "Host IP"), "LanHostInput", false));
-        container.AddChild(MakeInputRow("LanPortRow", "LanPortLabel", T("端口", "Port"), "LanPortInput", true));
+        container.AddChild(MakeInputRow("LanHostRow", "LanHostLabel", T("房主 IP", "Host IP", "호스트 IP"), "LanHostInput", false));
+        container.AddChild(MakeInputRow("LanPortRow", "LanPortLabel", T("端口", "Port", "포트"), "LanPortInput", true));
         panel.AddChild(container);
         AndroidFontCoveragePatches.RegisterTreePostfix(container);
         return container;
@@ -767,7 +767,7 @@ public static class LanMultiplayerPatches
     {
         if (!TryParseEndpoint(hostInput.Text, portInput.Text, out var host, out var port, out var error))
         {
-            ShowInfoPopup(T("无法加入局域网房间", "Unable to join LAN game"), error);
+            ShowInfoPopup(T("无法加入局域网房间", "Unable to join LAN game", "LAN 게임에 참가할 수 없습니다"), error);
             return;
         }
         hostInput.Text = host;
@@ -922,20 +922,20 @@ public static class LanMultiplayerPatches
 
     private static void ShowLanHostInfo()
     {
-        AddModal(NErrorPopup.Create(T("局域网房间已开启", "LAN Host Ready"), BuildHostInstructions(DefaultPort), showReportBugButton: false));
+        AddModal(NErrorPopup.Create(T("局域网房间已开启", "LAN Host Ready", "LAN 방 준비 완료"), BuildHostInstructions(DefaultPort), showReportBugButton: false));
     }
 
     private static string BuildHostInstructions(ushort port)
     {
         var builder = new StringBuilder();
-        builder.AppendLine(T("局域网房间已开启。", "LAN game is ready."));
-        builder.AppendLine(T("其他玩家在同一 Wi‑Fi / 局域网下输入下面任一地址即可加入：", "Other players on the same Wi‑Fi / LAN can join with one of these addresses:"));
+        builder.AppendLine(T("局域网房间已开启。", "LAN game is ready.", "LAN 방이 열렸습니다."));
+        builder.AppendLine(T("其他玩家在同一 Wi‑Fi / 局域网下输入下面任一地址即可加入：", "Other players on the same Wi‑Fi / LAN can join with one of these addresses:", "같은 Wi-Fi / LAN의 다른 플레이어는 아래 주소 중 하나로 참가할 수 있습니다:"));
         builder.AppendLine();
         var addresses = GetLocalIpv4Addresses().ToArray();
         if (addresses.Length == 0)
         {
-            builder.AppendLine(T($"端口：{port}", $"Port: {port}"));
-            builder.AppendLine(T("未能自动识别本机局域网 IP，请在系统网络设置里查看本机 IP 后，使用 <IP>:<端口> 加入。", "Could not detect this device's LAN IP. Check system network settings and use <IP>:<port>."));
+            builder.AppendLine(T($"端口：{port}", $"Port: {port}", $"포트: {port}"));
+            builder.AppendLine(T("未能自动识别本机局域网 IP，请在系统网络设置里查看本机 IP 后，使用 <IP>:<端口> 加入。", "Could not detect this device's LAN IP. Check system network settings and use <IP>:<port>.", "이 기기의 LAN IP를 찾지 못했습니다. 시스템 네트워크 설정에서 IP를 확인한 뒤 <IP>:<포트> 형식으로 참가하세요."));
         }
         else
         {

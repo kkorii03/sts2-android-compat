@@ -78,8 +78,8 @@ public partial class AndroidStartupLoadingScreen : Control
     public void SetStatus(string title, string details, float progress)
     {
         EnsureUiBuilt();
-        _titleLabel.Text = title;
-        _detailsLabel.Text = details;
+        _titleLabel.Text = ModText.Ko(title);
+        _detailsLabel.Text = ModText.Ko(details);
         UpdateOverallProgress(progress);
     }
 
@@ -95,15 +95,15 @@ public partial class AndroidStartupLoadingScreen : Control
         UpdateSessionProgress(session);
         if (prewarmCombatCode)
         {
-            _titleLabel.Text = "Optimizing combat code...";
-            _detailsLabel.Text = "Preparing first attack hot paths";
+            _titleLabel.Text = ModText.Ko("Optimizing combat code...");
+            _detailsLabel.Text = ModText.Ko("Preparing first attack hot paths");
             UpdateOverallProgress(0.88f);
             PrewarmCombatHotPaths();
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         }
         await WarmupCriticalScenesAsync(this, vfxMode);
-        _titleLabel.Text = "Startup optimization complete";
-        _detailsLabel.Text = "Launching main menu";
+        _titleLabel.Text = ModText.Ko("Startup optimization complete");
+        _detailsLabel.Text = ModText.Ko("Launching main menu");
         UpdateOverallProgress(1f);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
     }
@@ -115,8 +115,8 @@ public partial class AndroidStartupLoadingScreen : Control
         BuildUi();
         ConfigureLabel(_titleLabel, 42, new Color(0.97f, 0.98f, 1f));
         ConfigureLabel(_detailsLabel, 22, new Color(0.77f, 0.84f, 0.95f));
-        _titleLabel.Text = "Optimizing startup...";
-        _detailsLabel.Text = "Preparing resource warmup";
+        _titleLabel.Text = ModText.Ko("Optimizing startup...");
+        _detailsLabel.Text = ModText.Ko("Preparing resource warmup");
         UpdateOverallProgress(0f);
         _uiBuilt = true;
     }
@@ -188,7 +188,7 @@ public partial class AndroidStartupLoadingScreen : Control
             Name = "TitleLabel",
             UniqueNameInOwner = true,
             LayoutMode = 2,
-            Text = "Optimizing startup...",
+            Text = ModText.Ko("Optimizing startup..."),
             HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = MouseFilterEnum.Ignore,
         };
@@ -199,7 +199,7 @@ public partial class AndroidStartupLoadingScreen : Control
             Name = "DetailsLabel",
             UniqueNameInOwner = true,
             LayoutMode = 2,
-            Text = "Preparing resource warmup",
+            Text = ModText.Ko("Preparing resource warmup"),
             HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = MouseFilterEnum.Ignore,
         };
@@ -253,7 +253,7 @@ public partial class AndroidStartupLoadingScreen : Control
             Name = "HintLabel",
             LayoutMode = 2,
             Modulate = new Color(1f, 1f, 1f, 0.501961f),
-            Text = "First startup warmup may take a bit longer on Android",
+            Text = ModText.Ko("First startup warmup may take a bit longer on Android"),
             HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = MouseFilterEnum.Ignore,
         };
@@ -300,7 +300,7 @@ public partial class AndroidStartupLoadingScreen : Control
             float progress = 0.9f + (float)i / warmupScenePaths.Length * SceneWarmupWeight;
             if (loadingScreen != null)
             {
-                loadingScreen._titleLabel.Text = treeWarmup ? "Rendering combat effects..." : "Compiling combat effects...";
+                loadingScreen._titleLabel.Text = ModText.Ko(treeWarmup ? "Rendering combat effects..." : "Compiling combat effects...");
                 loadingScreen._detailsLabel.Text = $"{i + 1}/{warmupScenePaths.Length}: {GetSceneDisplayName(path)}";
                 loadingScreen.UpdateOverallProgress(progress);
             }
@@ -313,7 +313,7 @@ public partial class AndroidStartupLoadingScreen : Control
                 {
                     skipped++;
                     if (loadingScreen != null)
-                        loadingScreen._detailsLabel.Text = $"Skipped: {GetSceneDisplayName(path)}";
+                        loadingScreen._detailsLabel.Text = ModText.Ko("Skipped: ", "건너뜀: ") + GetSceneDisplayName(path);
                     if (tree != null)
                         await tree.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
                     else
@@ -627,23 +627,23 @@ public partial class AndroidStartupLoadingScreen : Control
     {
         if (session == null)
         {
-            _titleLabel.Text = "Preparing combat warmup...";
-            _detailsLabel.Text = "Preparing scene warmup";
+            _titleLabel.Text = ModText.Ko("Preparing combat warmup...");
+            _detailsLabel.Text = ModText.Ko("Preparing scene warmup");
             UpdateOverallProgress(0f);
             return;
         }
 
         LoadingSnapshot snapshot = LoadingSnapshot.From(session);
-        _titleLabel.Text = "Loading resources...";
+        _titleLabel.Text = ModText.Ko("Loading resources...");
         if (snapshot.TotalToLoad <= 0)
         {
-            _titleLabel.Text = "Preparing combat warmup...";
-            _detailsLabel.Text = session.IsCompleted ? "Bulk asset preload skipped" : "Preparing scene warmup";
+            _titleLabel.Text = ModText.Ko("Preparing combat warmup...");
+            _detailsLabel.Text = ModText.Ko(session.IsCompleted ? "Bulk asset preload skipped" : "Preparing scene warmup");
             UpdateOverallProgress(session.IsCompleted ? 0.8f : 0f);
             return;
         }
         int percent = Mathf.RoundToInt(snapshot.Progress * 100f);
-        _detailsLabel.Text = $"{snapshot.LoadedCount:N0}/{snapshot.TotalToLoad:N0} resources ({percent}%)";
+        _detailsLabel.Text = ModText.Ko($"{snapshot.LoadedCount:N0}/{snapshot.TotalToLoad:N0} resources ({percent}%)", $"리소스 {snapshot.LoadedCount:N0}/{snapshot.TotalToLoad:N0}개 ({percent}%)");
         UpdateOverallProgress(snapshot.Progress * 0.8f);
     }
 

@@ -40,8 +40,8 @@ internal static class ModText
     {
         // In-game "Mobile" settings tab (AndroidInGameSettingsPatches)
         ["Mobile"] = "모바일",
-        ["Mobile Port Settings"] = "모바일 포트 설정",
-        ["Android companion settings"] = "안드로이드 추가 설정",
+        ["Mobile Port Settings"] = "모바일 설정",
+        ["Android companion settings"] = "추가 설정",
         ["Open"] = "열기",
         ["Display / Graphics"] = "화면 / 그래픽",
         ["Shader compatibility"] = "셰이더 호환 모드",
@@ -54,7 +54,7 @@ internal static class ModText
         ["Hand-card lift height"] = "손패 카드 들어 올림 높이",
         ["Hand card size"] = "손패 카드 크기",
         ["End turn / energy size"] = "턴 종료 / 에너지 크기",
-        ["Touch-lift preview"] = "손 떼면 미리보기",
+        ["Touch-lift preview"] = "탭하면 카드 크게 보기",
         ["Tooltip display"] = "툴팁 표시",
         ["Immediate"] = "바로 표시",
         ["Long press 1s"] = "1초 길게 누르기",

@@ -133,6 +133,7 @@ public static class ModEntry
             MerchantSelectionConfirmationPatches.Apply(_harmony);
             MobileTooltipPatches.Apply(_harmony);
             MobileTapPreviewPatches.Apply(_harmony);
+            MobileHandScrubPatches.Apply(_harmony);
             MobileReactionButtonPatches.Apply(_harmony);
             MobileHandLayoutPatches.Apply(_harmony);
             ExtendedMultiplayerRoomPatches.Apply(_harmony);
@@ -143,6 +144,8 @@ public static class ModEntry
             QuickRestartPatches.Apply(_harmony);
             LifecycleAndPerformancePatches.Apply(_harmony);
         });
+
+        ApplyPatchGroup("Mobile map touch controls", () => MobileMapTouchPatches.Apply(_harmony));
 
         ApplyPatchGroup("LAN/mod-loader diagnostic patches", () =>
         {

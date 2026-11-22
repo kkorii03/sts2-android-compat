@@ -41,9 +41,30 @@ internal static class AndroidFontSizeScaler
         for (int i = 0; i < node.GetChildCount(); i++) ApplyRecursive(node.GetChild(i), scale);
     }
 
+    // Screens laid out in fixed boxes around their text: the mobile 160% font scale made the
+    // title/subtitle overlap and the Continue button cover the story text (S24U, timeline
+    // epoch screens). They keep the game's own sizes.
+    private static readonly System.Collections.Generic.HashSet<string> FixedLayoutScreens = new(StringComparer.Ordinal)
+    {
+        "NEpochInspectScreen",
+        "NUnlockEpochScreen",
+        "NEarlyAccessDisclaimer",
+    };
+
+    private static bool IsInFixedLayoutScreen(Node node)
+    {
+        for (var current = node; current != null; current = current.GetParent())
+        {
+            if (FixedLayoutScreens.Contains(current.GetType().Name))
+                return true;
+        }
+        return false;
+    }
+
     internal static void Apply(Node node, float scale)
     {
         if (node is not Control control) return;
+        if (scale != 1f && IsInFixedLayoutScreen(node)) scale = 1f;
         if (control is MegaLabel { AutoSizeEnabled: true } label)
         {
             if (!HasSourcePortScaling()) ApplyAutoSize(label, scale);

@@ -17,6 +17,7 @@ namespace STS2Mobile.Patches;
 public static class NativeFeel
 {
     public const string DeveloperModeKey = "android_developer_mode";
+    private const string FastModeDefaultKey = "mobile_fast_mode_default_applied";
 
     public static bool IsAndroid => OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase);
 
@@ -33,7 +34,7 @@ public static class NativeFeel
 
     public static void Apply(Harmony harmony)
     {
-        PatchHelper.Patch(harmony, typeof(NMainMenu), "_Ready", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(MainMenuPostfix)));
+        PatchHelper.Patch(harmony, typeof(NMainMenu), "_Ready", prefix: PatchHelper.Method(typeof(NativeFeel), nameof(MainMenuReadyPrefix)), postfix: PatchHelper.Method(typeof(NativeFeel), nameof(MainMenuPostfix)));
         PatchHelper.Patch(harmony, typeof(NMainMenu), "RefreshButtons", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(MainMenuPostfix)));
         PatchHelper.Patch(harmony, typeof(NMainMenu), "OnSubmenuStackChanged", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(MainMenuPostfix)));
 
@@ -44,6 +45,38 @@ public static class NativeFeel
         var settingsScreenType = typeof(NGame).Assembly.GetType("MegaCrit.Sts2.Core.Nodes.Screens.Settings.NSettingsScreen");
         if (settingsScreenType != null)
             PatchHelper.Patch(harmony, settingsScreenType, "_Ready", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(SettingsScreenReadyPostfix)));
+    }
+
+    // The PC early-access popup ("press F2 for the feedback form") is not part of a mobile
+    // release; NMainMenu._Ready only shows it while SeenEaDisclaimer is false.
+    public static void MainMenuReadyPrefix()
+    {
+        try
+        {
+            if (ShowPortUi)
+                return;
+            var settings = MegaCrit.Sts2.Core.Saves.SaveManager.Instance?.SettingsSave;
+            if (settings != null && !settings.SeenEaDisclaimer)
+                settings.SeenEaDisclaimer = true;
+
+            // PC Normal speed holds each played card mid-screen through its whole
+            // animation, which reads as a stall on a phone. Default to the game's own
+            // Fast mode once; the player's later choice in Settings > General wins.
+            var prefs = MegaCrit.Sts2.Core.Saves.SaveManager.Instance?.PrefsSave;
+            if (prefs != null && !AndroidSettingsBridge.GetBool(FastModeDefaultKey, false))
+            {
+                if (prefs.FastMode == MegaCrit.Sts2.Core.Settings.FastModeType.Normal)
+                {
+                    prefs.FastMode = MegaCrit.Sts2.Core.Settings.FastModeType.Fast;
+                    MegaCrit.Sts2.Core.Saves.SaveManager.Instance.SavePrefsFile();
+                }
+                AndroidSettingsBridge.SetBool(FastModeDefaultKey, true);
+            }
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Native early-access popup skip failed: {exception.Message}");
+        }
     }
 
     // STS1 mobile's main menu has no Quit / Patch Notes; the OS closes the app. Multiplayer on
@@ -72,8 +105,18 @@ public static class NativeFeel
         {
             if (ShowPortUi)
                 return;
-            if (Traverse.Create(__instance).Field("_moddedWarning").GetValue<Control>() is { } warning)
+            var fields = Traverse.Create(__instance);
+            if (fields.Field("_moddedWarning").GetValue<Control>() is { } warning)
                 warning.Visible = false;
+            // In a run the PC build stamps "[version] (date)" and the run seed in the top
+            // right for bug reports; STS1 mobile's combat/map screens show nothing there.
+            if (!fields.Field("isMainMenu").GetValue<bool>())
+            {
+                if (fields.Field("_releaseInfo").GetValue<Control>() is { } release)
+                    release.Visible = false;
+                if (fields.Field("_seed").GetValue<Control>() is { } seed)
+                    seed.Visible = false;
+            }
         }
         catch
         {

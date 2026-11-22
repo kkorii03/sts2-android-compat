@@ -29,6 +29,8 @@ public static class AndroidInputCompatPatches
     private static readonly Dictionary<int, TouchPointState> ActiveTouchPoints = new();
     private static readonly HashSet<int> SuppressedSecondaryTouchIndices = new();
     private static long _lastBackDispatchFrame = -1;
+    private static ulong _lastBackDispatchMsec;
+    private const ulong BackDedupWindowMsec = 200;
     private static ulong _lastTwoFingerDispatchTicks;
     private static ulong _twoFingerGestureGeneration;
 
@@ -150,10 +152,16 @@ public static class AndroidInputCompatPatches
     {
         if (NGame.Instance?.Transition?.InTransition == true)
             return;
+        // One Android Back press reaches Godot twice (KEYCODE_BACK key event and
+        // NOTIFICATION_WM_GO_BACK_REQUEST), measured 6-13 ms apart in different frames on
+        // a Galaxy S24 Ultra. The second copy would close the next screen too or open the
+        // pause menu, so treat everything within one short window as the same press.
         var frame = inputManager?.GetTree()?.GetFrame() ?? -1L;
-        if (_lastBackDispatchFrame == frame)
+        var now = Time.GetTicksMsec();
+        if (_lastBackDispatchFrame == frame || (_lastBackDispatchMsec != 0 && now - _lastBackDispatchMsec < BackDedupWindowMsec))
             return;
         _lastBackDispatchFrame = frame;
+        _lastBackDispatchMsec = now;
         if (ShouldDispatchBackAsScreenCancelOnly())
         {
             DispatchMegaInput(MegaInput.cancel, true);

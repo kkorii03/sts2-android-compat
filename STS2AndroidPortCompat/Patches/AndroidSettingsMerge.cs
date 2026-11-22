@@ -84,6 +84,7 @@ public static class AndroidSettingsMerge
         "android_dev_tools_enabled",
         "android_dev_inspector_writable",
         "android_developer_mode",
+        "mobile_fast_mode_default_applied",
     };
 
     public static void MergeBackAndroidOnlyFields(string beforeJson)

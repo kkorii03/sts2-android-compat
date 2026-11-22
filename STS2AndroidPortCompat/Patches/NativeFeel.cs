@@ -267,6 +267,11 @@ public static class NativeFeel
             {
                 if (child is Control control && control.SizeFlagsHorizontal != Control.SizeFlags.ShrinkBegin)
                     control.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+                // The buttons keep a common minimum width with the text centred inside;
+                // STS1 lines every item up on its left edge.
+                if (child is Node button && button.GetChildCount() > 0 && button.GetChild(0) is Label label
+                    && label.HorizontalAlignment != HorizontalAlignment.Left)
+                    label.HorizontalAlignment = HorizontalAlignment.Left;
             }
             Callable.From(() => PlaceMenuLikeSts1(list)).CallDeferred();
         }
@@ -319,6 +324,13 @@ public static class NativeFeel
         }
     }
 
+    private static readonly System.Collections.Generic.HashSet<string> HiddenSettingsRows = new(StringComparer.Ordinal)
+    {
+        "NShowMpMapDrawingsTickbox",
+        "NHandCardCountTickbox",
+        "NBackgroundModeTickbox",
+    };
+
     public static void SettingsScreenReadyPostfix(Node __instance)
     {
         try
@@ -330,13 +342,20 @@ public static class NativeFeel
             HideFeedbackRow(__instance);
             // STS1 mobile has no key-binding page; the Input tab only lists PC keyboard and
             // controller bindings. A connected keyboard/pad flips UseTouchControls off.
-            if (MobileInputPolicyPatches.UseTouchControls
-                && __instance.GetNodeOrNull<Node>("%SettingsTabManager")?.GetNodeOrNull<Control>("Input") is { } inputTab)
-                HideButton(inputTab);
-            // Single-player mobile build: "show multiplayer map drawings" has nothing to show.
+            // The Graphics tab is PC window/monitor/VSync/MSAA options; the phone-relevant
+            // ones (font size, 60 Hz) live in the Mobile tab. STS1 mobile has neither tab.
+            var tabs = __instance.GetNodeOrNull<Node>("%SettingsTabManager");
+            if (MobileInputPolicyPatches.UseTouchControls && tabs != null)
+            {
+                HideButton(tabs.GetNodeOrNull<Control>("Input"));
+                HideButton(tabs.GetNodeOrNull<Control>("Graphics"));
+            }
+            // PC-only General rows: multiplayer map drawings (single-player build), card
+            // index numbers (keyboard 1-9 card hotkeys) and background FPS limit (Android
+            // already pauses the game in the background).
             foreach (var node in __instance.FindChildren("*", "", true, false))
             {
-                if (node is Control control && control.GetType().Name == "NShowMpMapDrawingsTickbox")
+                if (node is Control control && HiddenSettingsRows.Contains(control.GetType().Name))
                     HideSettingsRow(control);
             }
         }

@@ -90,11 +90,63 @@ public static class NativeFeel
             HideButton(Traverse.Create(__instance).Field("_quitButton").GetValue<Control>());
             HideButton(Traverse.Create(__instance).Field("_patchNotesButtonNode").GetValue<Control>());
             HideButton(Traverse.Create(__instance).Field("_multiplayerButton").GetValue<Control>());
+            SpaceMainMenuButtons(__instance);
+            // Button sizes are still zero during _Ready; retry once layout has run.
+            var menu = __instance;
+            Callable.From(() =>
+            {
+                if (GodotObject.IsInstanceValid(menu))
+                    SpaceMainMenuButtons(menu);
+            }).CallDeferred();
         }
         catch (Exception exception)
         {
             PatchHelper.Log($"Native main-menu cleanup failed: {exception.Message}");
         }
+    }
+
+    // STS1 mobile's main menu items sit ~9.2% of the screen height apart (centre to centre);
+    // the PC list is packed at ~5%, which is too tight for a thumb (S24U feedback). Widen the
+    // VBox separation to that pitch and keep the list's bottom on screen.
+    private const float MenuPitchRatio = 0.092f;
+    private const float MenuBottomLimitRatio = 0.95f;
+    private static readonly StringName SeparationName = "separation";
+
+    private static void SpaceMainMenuButtons(NMainMenu menu)
+    {
+        try
+        {
+            if (menu.GetNodeOrNull<BoxContainer>("MainMenuTextButtons") is not { } list)
+                return;
+            float buttonHeight = 0f;
+            foreach (var child in list.GetChildren())
+            {
+                if (child is Control { Visible: true } control)
+                    buttonHeight = Math.Max(buttonHeight, control.Size.Y);
+            }
+            if (buttonHeight <= 0f)
+                return;
+            var visible = menu.GetViewportRect().Size;
+            var separation = Mathf.RoundToInt(visible.Y * MenuPitchRatio - buttonHeight);
+            if (separation <= list.GetThemeConstant(SeparationName))
+                return;
+            list.AddThemeConstantOverride(SeparationName, separation);
+            Callable.From(() => KeepMenuOnScreen(list)).CallDeferred();
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Main-menu spacing failed: {exception.Message}");
+        }
+    }
+
+    private static void KeepMenuOnScreen(Control list)
+    {
+        if (!GodotObject.IsInstanceValid(list) || !list.IsInsideTree())
+            return;
+        var limit = list.GetViewportRect().Size.Y * MenuBottomLimitRatio;
+        var overflow = list.GetGlobalRect().End.Y - limit;
+        if (overflow > 0f)
+            list.GlobalPosition -= new Vector2(0f, overflow);
     }
 
     // The game's own version/date label stays (the official build shows it); only the

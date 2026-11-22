@@ -45,9 +45,12 @@ internal static class MobileConfirmPlacement
     private static readonly FieldInfo CostLabelField = typeof(NMerchantSlot).GetField("_costLabel", InstanceFlags);
     private static readonly ConditionalWeakTable<NConfirmButton, PlacementState> States = new();
 
+    // Off by default since the first on-device test: a confirm button that moves to a
+    // different spot for every card felt wrong next to STS1 mobile, whose rule is a fixed
+    // teal Confirm at the bottom right and Skip/Back on the left (sts1-mobile-ui.md 7, 16).
     internal static bool IsEnabled()
     {
-        return AndroidSettingsBridge.GetBool(SettingKey, true);
+        return AndroidSettingsBridge.GetBool(SettingKey, false);
     }
 
     /// <summary>Call after <c>button.Enable()</c>; moves the button next to <paramref name="anchor"/>.</summary>

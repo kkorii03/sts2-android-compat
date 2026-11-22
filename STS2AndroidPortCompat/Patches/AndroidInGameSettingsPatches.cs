@@ -241,7 +241,7 @@ public static class AndroidInGameSettingsPatches
         AddTouchLiftPreviewRow(content);
         AddSwitchRow(content, "touch_tap_guard", T("防误触出牌", "Accidental-play guard"), true, null);
         AddSwitchRow(content, "mobile_selection_confirmation", T("手机选择二次确认", "Mobile selection confirmation"), true, null);
-        AddSwitchRow(content, "mobile_confirm_near_thumb", T("确认按钮靠近所选项", "Confirm button near selection"), true, null);
+        AddSwitchRow(content, "mobile_confirm_near_thumb", T("确认按钮靠近所选项", "Confirm button near selection"), false, null);
         AddToggleRow(content, T("省电模式（60 Hz）", "Battery saver (60 Hz)"),
             string.Equals(AndroidSettingsBridge.GetString("android_display_refresh_rate_mode", "high"), "60hz", StringComparison.OrdinalIgnoreCase),
             enabled =>

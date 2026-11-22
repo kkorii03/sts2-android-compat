@@ -152,7 +152,12 @@ public static class LifecycleAndPerformancePatches
         {
             await Task.Yield();
             await WaitForFramesAsync(2);
-            loadingScreen = await ShowDeferredPreloadScreenAsync(owner);
+            // Native feel: STS1 mobile goes from its logo straight to an interactive menu.
+            // This "optimizing startup" screen covered the finished menu with a black
+            // screen and a thin bar for 6-8 s on the S24U; without it the same preload runs
+            // behind the menu in time-sliced steps (RunSerializedAndroidPreloadAsync).
+            if (NativeFeel.ShowPortUi)
+                loadingScreen = await ShowDeferredPreloadScreenAsync(owner);
             if (ShouldRunCommonMainMenuResourcePreload() && TryMarkStartupResourcePreloadStarted())
                 await RunSerializedAndroidPreloadAsync(loadingScreen);
             if (IsCombatCodeWarmupEnabled())

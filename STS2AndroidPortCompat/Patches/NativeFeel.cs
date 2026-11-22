@@ -130,6 +130,7 @@ public static class NativeFeel
     // this port is LAN-only (no Steam), so its entry is a developer-mode feature too.
     public static void MainMenuPostfix(NMainMenu __instance)
     {
+        RuntimeAssetLoadingPatches.MarkBootFinished();
         try
         {
             if (ShowPortUi)

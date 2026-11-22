@@ -99,11 +99,22 @@ internal static class RuntimeAssetLoadingPatches
     private static ulong _coveredFrame = ulong.MaxValue;
     private static bool _covered;
 
+    // Boot (black screen / splash, nothing interactive) counts as covered until the first
+    // main menu is ready: MainMenuEssentials took 1.3 s under the 2 ms budget on the S24U.
+    private static bool _bootFinished;
+
+    internal static void MarkBootFinished() => _bootFinished = true;
+
     private static bool IsScreenCovered(ulong frame)
     {
         if (frame == _coveredFrame)
             return _covered;
         _coveredFrame = frame;
+        if (!_bootFinished)
+        {
+            _covered = true;
+            return true;
+        }
         try
         {
             var transition = NGame.Instance?.Transition;

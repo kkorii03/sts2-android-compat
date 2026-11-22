@@ -175,6 +175,8 @@ public static class AndroidInGameSettingsPatches
         if (tab == null)
             return null;
         tab.Name = MobileTabName;
+        // The template may be the Input tab, which NativeFeel hides on touch builds.
+        tab.Visible = true;
         tab.FocusMode = Control.FocusModeEnum.All;
         if (tab.GetNodeOrNull<Label>("Label") is { } label)
             label.Text = T("移动端", "Mobile");

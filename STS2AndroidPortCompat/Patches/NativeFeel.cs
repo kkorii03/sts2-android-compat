@@ -328,6 +328,11 @@ public static class NativeFeel
             HideButton(__instance.GetNodeOrNull<Control>("%Modding"));
             HideButton(__instance.GetNodeOrNull<Control>("%ModdingDivider"));
             HideFeedbackRow(__instance);
+            // STS1 mobile has no key-binding page; the Input tab only lists PC keyboard and
+            // controller bindings. A connected keyboard/pad flips UseTouchControls off.
+            if (MobileInputPolicyPatches.UseTouchControls
+                && __instance.GetNodeOrNull<Node>("%SettingsTabManager")?.GetNodeOrNull<Control>("Input") is { } inputTab)
+                HideButton(inputTab);
             // Single-player mobile build: "show multiplayer map drawings" has nothing to show.
             foreach (var node in __instance.FindChildren("*", "", true, false))
             {

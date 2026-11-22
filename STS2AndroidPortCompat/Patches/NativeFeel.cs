@@ -286,9 +286,17 @@ public static class NativeFeel
                     control.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
                 // The buttons keep a common minimum width with the text centred inside;
                 // STS1 lines every item up on its left edge.
+                // The label is a fit-to-text box anchored in the button centre, so stretch it
+                // across the button width and left-align the text inside.
                 if (child is Node button && button.GetChildCount() > 0 && button.GetChild(0) is Label label
-                    && label.HorizontalAlignment != HorizontalAlignment.Left)
+                    && (label.HorizontalAlignment != HorizontalAlignment.Left || label.AnchorLeft != 0f || label.AnchorRight != 1f))
+                {
+                    label.AnchorLeft = 0f;
+                    label.AnchorRight = 1f;
+                    label.OffsetLeft = 0f;
+                    label.OffsetRight = 0f;
                     label.HorizontalAlignment = HorizontalAlignment.Left;
+                }
             }
             Callable.From(() => PlaceMenuLikeSts1(list)).CallDeferred();
         }
@@ -399,7 +407,20 @@ public static class NativeFeel
         if (line != null && list is BoxContainer && line is not ScrollContainer)
         {
             HideButton(line);
-            HideButton(list.GetNodeOrNull<Control>(line.Name + "Divider"));
+            if (list.GetNodeOrNull<Control>(line.Name + "Divider") is { } named)
+            {
+                HideButton(named);
+            }
+            else
+            {
+                // Rows are separated by divider nodes whose names do not always follow
+                // "<Row>Divider"; hide the divider right after the row so no doubled line
+                // is left behind (seen on the S24U General tab).
+                var index = line.GetIndex();
+                if (index + 1 < list.GetChildCount() && list.GetChild(index + 1) is Control next
+                    && next.Name.ToString().Contains("Divider", StringComparison.OrdinalIgnoreCase))
+                    HideButton(next);
+            }
         }
         else
         {

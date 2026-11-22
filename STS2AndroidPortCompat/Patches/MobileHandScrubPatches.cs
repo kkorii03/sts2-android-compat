@@ -32,6 +32,10 @@ public static class MobileHandScrubPatches
     private static float _lowestY;
     private static bool _scrubbing;
 
+    // While a finger browses the hand, a pinned targeted card stays in its hand
+    // slot instead of flying to the screen centre on every card it passes.
+    internal static bool IsScrubbing => _scrubbing && _touchIndex != NoTouch;
+
     public static void Apply(Harmony harmony)
     {
         PatchHelper.Patch(harmony, typeof(NGame), "_Input",
@@ -118,9 +122,12 @@ public static class MobileHandScrubPatches
         DownTouches.Remove(touch.Index);
         if (touch.Index != _touchIndex)
             return;
-        if (_scrubbing && GodotObject.IsInstanceValid(_hand))
-            PatchHelper.Log($"Hand scrub ended on: {MobileTapPreviewPatches.GetPinnedHolder(_hand)?.CardModel?.Id}");
+        var endedScrubHand = _scrubbing && GodotObject.IsInstanceValid(_hand) ? _hand : null;
+        if (endedScrubHand != null)
+            PatchHelper.Log($"Hand scrub ended on: {MobileTapPreviewPatches.GetPinnedHolder(endedScrubHand)?.CardModel?.Id}");
         StopTracking();
+        // Re-run the layout now that browsing is over (a pinned targeted card moves to the centre).
+        endedScrubHand?.ForceRefreshCardIndices();
     }
 
     // Returns true when this drag started a card play and should be consumed.

@@ -119,3 +119,58 @@ Require(!MobileScrollGestureMath.StepFling(ref flingTarget, ref flingVelocity, 1
     "A fling that crosses the top limit stops and leaves the overscroll to the game's bounce-back.");
 Require(MobileScrollGestureMath.ClampMagnitude(-9000f, 6000f) == -6000f, "Fling speed is capped.");
 Console.WriteLine("PASS: grid touch scroll slop, overscroll damping, release velocity and fling decay.");
+
+// Leftover-hover clear after a touch tap (MobileHoverReleasePatches).
+var hover = new MobileHoverReleaseTracker();
+hover.MousePressed(100, 100);
+hover.TouchPressed(0);
+hover.Moved(110, 120);
+var tapSerial = hover.Serial;
+Require(hover.MouseReleased(false), "A still single-finger tap clears its leftover hover.");
+hover.TouchReleased(0);
+hover.MousePressed(100, 100);
+Require(hover.Serial != tapSerial, "A new press invalidates a clear queued for the previous tap.");
+hover.TouchPressed(0);
+hover.Moved(100, 300);
+hover.Moved(100, 100);
+Require(!hover.MouseReleased(false), "A drag (map, grid, hand) that comes back to its start is still not a tap.");
+hover.TouchReleased(0);
+hover.MousePressed(100, 100);
+hover.TouchPressed(0);
+hover.TouchPressed(1);
+hover.TouchReleased(1);
+Require(!hover.MouseReleased(false), "A two-finger gesture never clears hover, even after the second finger lifts.");
+hover.TouchReleased(0);
+hover.MousePressed(100, 100);
+hover.TouchPressed(0);
+Require(!hover.MouseReleased(true), "A cancelled touch (system gesture, palm) is not a tap.");
+hover.TouchReleased(0);
+Require(!hover.MouseReleased(false), "A release without its press is not a tap.");
+hover.TouchPressed(5);
+hover.MousePressed(10, 10);
+hover.TouchPressed(0);
+Require(hover.MouseReleased(false), "A finger whose release was lost cannot block every later tap.");
+hover.MousePressed(10, 10);
+hover.Reset();
+Require(!hover.MouseReleased(false), "Input-mode reset drops the gesture in flight.");
+
+string[] creature = { "Control", "NCreature", "Node2D" };
+Require(MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, false, creature), "Tapping the player clears its nameplate hover.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, false, null!), "Nothing hovered: no synthetic pointer event.");
+Require(!MobileHoverReleasePolicy.ShouldClear(false, false, false, true, false, false, creature), "Mouse/keyboard mode keeps real hover.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, true, false, true, false, false, creature), "Immediate tooltip mode reads tips through hover.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, true, true, false, false, creature), "A finger back down keeps its hover.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, false, false, false, creature), "A newer gesture owns the pointer.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, true, true, false, creature), "Targeting/card play follows the pointer.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, true, creature), "A tap-pinned icon tooltip would be removed by its owner's MouseExited.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, false, new[] { "NClickableControl", "NHandCardHolder", "Control" }),
+    "A tapped (pinned) hand card keeps its hover.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, false, new[] { "NClickableControl", "NGridCardHolder" }),
+    "Reward/grid selection previews keep their hover.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, false, new[] { "TextureRect", "NMapLegendItem", "VBoxContainer" }),
+    "The map legend highlight lives on hover.");
+Require(!MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, false, new[] { "Control", "NMerchantRelic" }),
+    "A shop slot's purchase preview keeps its hover.");
+Require(MobileHoverReleasePolicy.ShouldClear(true, false, false, true, false, false, new[] { "Control", "NPotionHolder" }),
+    "A tapped potion (popup stays open) drops its hover glow.");
+Console.WriteLine("PASS: touch tap hover release tracking and exclusions.");

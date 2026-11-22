@@ -138,6 +138,9 @@ public static class ModEntry
             MobileHandScrubPatches.Apply(_harmony);
             MobileReactionButtonPatches.Apply(_harmony);
             MobileHandLayoutPatches.Apply(_harmony);
+            MobileTargetingPreviewPatches.Apply(_harmony);
+            MobileHoverReleasePatches.Apply(_harmony);
+            MobileTouchTargetPatches.Apply(_harmony);
             MobileCombatHudPatches.Apply(_harmony);
             ExtendedMultiplayerRoomPatches.Apply(_harmony);
             IntentAnimationPatches.Apply(_harmony);

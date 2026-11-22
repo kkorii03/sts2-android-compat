@@ -582,6 +582,18 @@ public static class MobileTooltipPatches
         }
     }
 
+    /// <summary>True while a tapped icon's tooltip is pinned; its owner's MouseExited would remove it.</summary>
+    internal static bool HasStickyTooltip()
+    {
+        return Resolve(_stickyOwner) != null;
+    }
+
+    /// <summary>Immediate mode reveals tooltips on hover, so a touch's leftover hover is how a tap reads them.</summary>
+    internal static bool UsesHoverTooltips()
+    {
+        return GetTooltipMode() == ModeImmediate;
+    }
+
     private static void PinOwnerTip(Control owner)
     {
         if (owner == null || !TryGetTip(owner, out var tip))

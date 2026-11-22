@@ -37,7 +37,7 @@ public static class MobileTapPreviewPatches
     private const float ClaimMaxScreenShare = 0.25f;
     // Enemy tap assist radius as a share of the visible height (~76 px at 1080p,
     // about 5 mm on a phone), so it follows the UI scale instead of raw pixels.
-    private const float TargetAssistScreenFraction = 0.07f;
+    internal const float TargetAssistScreenFraction = 0.07f;
     private const float PlayZoneMaxScreenFraction = 0.75f;
     // ~43 px at 1080p: the no-op strip just above the resting hand.
     private const float HandDeadBandScreenFraction = 0.04f;
@@ -897,19 +897,19 @@ public static class MobileTapPreviewPatches
         FinishTargetingMethod?.Invoke(targetManager, new object[] { false });
     }
 
-    private static bool IsSingleCreatureTarget(CardModel card)
+    internal static bool IsSingleCreatureTarget(CardModel card)
     {
         return card != null && card.TargetType is TargetType.AnyEnemy or TargetType.AnyAlly;
     }
 
-    private static Rect2 ScreenRect(Control control)
+    internal static Rect2 ScreenRect(Control control)
     {
         var transform = control.GetGlobalTransformWithCanvas();
         var scale = transform.Scale;
         return new Rect2(transform.Origin, new Vector2(control.Size.X * Mathf.Abs(scale.X), control.Size.Y * Mathf.Abs(scale.Y)));
     }
 
-    private static float DistanceToRect(Rect2 rect, Vector2 point)
+    internal static float DistanceToRect(Rect2 rect, Vector2 point)
     {
         var dx = Mathf.Max(Mathf.Max(rect.Position.X - point.X, 0f), point.X - rect.End.X);
         var dy = Mathf.Max(Mathf.Max(rect.Position.Y - point.Y, 0f), point.Y - rect.End.Y);
@@ -1001,7 +1001,7 @@ public static class MobileTapPreviewPatches
         }
     }
 
-    private static bool CanTargetPinnedCard(CardModel card, Creature target)
+    internal static bool CanTargetPinnedCard(CardModel card, Creature target)
     {
         if (card == null || target == null || !target.IsAlive)
             return false;

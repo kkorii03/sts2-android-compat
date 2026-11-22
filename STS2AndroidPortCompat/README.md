@@ -320,6 +320,17 @@ policy is touch and companion `touch_lift_preview` is true; a second tap follows
 `touch_lift_retap_action` (`put_down`, `play`, or `none`). Reward/shop confirmation
 and tooltip restrictions use the same policy. Switching clears stale selections
 and timers without playing cards, granting rewards or purchasing an item.
+`Patches/MobileTargetingPreviewPatches.cs` gives a pinned single-target card the
+STS1-mobile look: it moves to the screen centre (width ~29% H, top ~56% H) and
+the game's own targeting arrow points from it at the enemy nearest the last touch
+(or follows the finger while it is down). It is visual only; play/cancel rules
+stay in the tap preview. `Patches/MobileHoverReleasePatches.cs` parks the
+emulated pointer off screen the frame after a still single-finger tap so
+hover-only UI (creature nameplate) clears, except for card holders, the map
+legend, shop slots, tap-pinned icon tooltips, targeting and immediate tooltip
+mode. `Patches/MobileTouchTargetPatches.cs` adds invisible pass-through hit pads
+so top-bar icons, potions, relics and creature powers/intents accept taps in at
+least 7% of the screen height (creature pads are off while a card is selected).
 `tests/MobileInputPolicy.Tests` covers ownership and deferred transitions;
 `tests/MobileHotPath.Tests` exercises all five production consumers with packaged
 Harmony, in both default and `-p:LegacyIntent=true` shapes.

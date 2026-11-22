@@ -206,6 +206,7 @@ public static class MobileInputPolicyPatches
         MobileSelectionConfirmationPatches.ResetForInputModeChange();
         MerchantSelectionConfirmationPatches.ResetForInputModeChange();
         MobileTooltipPatches.ResetForInputModeChange();
+        MobileHoverReleasePatches.Reset();
         AndroidInputCompatPatches.ResetForInputModeChange();
     }
 

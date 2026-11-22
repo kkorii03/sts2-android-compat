@@ -46,6 +46,19 @@ public static class NativeFeel
         PatchHelper.Patch(harmony, typeof(NTransition), "RoomFadeOut", prefix: PatchHelper.Method(typeof(NativeFeel), nameof(RoomFadeOutPrefix)));
         try
         {
+            var launch = AccessTools.Method(typeof(NGame), "LaunchMainMenu", new[] { typeof(bool) });
+            if (launch != null)
+            {
+                harmony.Patch(launch, prefix: new HarmonyMethod(PatchHelper.Method(typeof(NativeFeel), nameof(LaunchMainMenuSkipLogoPrefix))) { priority = Priority.First });
+                PatchHelper.Log("Patched NGame.LaunchMainMenu to skip the intro logo on Android");
+            }
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"FAILED intro logo skip patch: {exception.Message}");
+        }
+        try
+        {
             var locAdd = AccessTools.Method(typeof(MegaCrit.Sts2.Core.Localization.LocString), "Add", new[] { typeof(string), typeof(string) });
             if (locAdd != null)
             {
@@ -136,6 +149,21 @@ public static class NativeFeel
         catch (Exception exception)
         {
             PatchHelper.Log($"Native main-menu cleanup failed: {exception.Message}");
+        }
+    }
+
+    // Cold start on the S24U took 21 s to the menu, ~9 s of it the Mega Crit logo animation,
+    // which played even with "Skip intro logo" ticked. A phone game should open straight to
+    // its menu: always skip it on Android (developer mode keeps the vanilla choice).
+    public static void LaunchMainMenuSkipLogoPrefix(ref bool __0)
+    {
+        try
+        {
+            if (!ShowPortUi)
+                __0 = true;
+        }
+        catch
+        {
         }
     }
 

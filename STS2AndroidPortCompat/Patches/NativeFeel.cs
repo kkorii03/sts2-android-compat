@@ -43,6 +43,21 @@ public static class NativeFeel
             PatchHelper.Patch(harmony, debugLabelType, "UpdateText", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(DebugInfoUpdateTextPostfix)));
 
         PatchHelper.Patch(harmony, typeof(NTransition), "RoomFadeOut", prefix: PatchHelper.Method(typeof(NativeFeel), nameof(RoomFadeOutPrefix)));
+        try
+        {
+            var locAdd = AccessTools.Method(typeof(MegaCrit.Sts2.Core.Localization.LocString), "Add", new[] { typeof(string), typeof(string) });
+            if (locAdd != null)
+            {
+                harmony.Patch(locAdd, prefix: new HarmonyMethod(PatchHelper.Method(typeof(NativeFeel), nameof(LocAddPrefix))));
+                PatchHelper.Log("Patched LocString.Add(string, string) for touch hotkey hints");
+            }
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"FAILED LocString.Add hotkey hint patch: {exception.Message}");
+        }
+        PatchHelper.Patch(harmony, typeof(NOpenProfileScreenButton), "RefreshLabels", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(ProfileLabelsPostfix)));
+        PatchHelper.Patch(harmony, typeof(MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapShareButton), "Initialize", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(MapShareInitializePostfix)));
 
         var settingsScreenType = typeof(NGame).Assembly.GetType("MegaCrit.Sts2.Core.Nodes.Screens.Settings.NSettingsScreen");
         if (settingsScreenType != null)
@@ -105,6 +120,48 @@ public static class NativeFeel
         {
             PatchHelper.Log($"Native main-menu cleanup failed: {exception.Message}");
         }
+    }
+
+    // Hover-tip titles append the PC key in brackets ("End Turn (E)", "Deck (D)", "Map (M)")
+    // through {Hotkey:choose(None):| ({})}. With touch controls there is no key to press;
+    // "None" is the game's own value for "no binding", which drops the bracket.
+    private static readonly string HotkeyVar = "Hotkey";
+
+    public static void LocAddPrefix(string __0, ref string __1)
+    {
+        if (__0 != HotkeyVar)
+            return;
+        try
+        {
+            if (IsAndroid && MobileInputPolicyPatches.UseTouchControls)
+                __1 = "None";
+        }
+        catch
+        {
+        }
+    }
+
+    // STS1 mobile's profile caption says "tap", not the PC "click to edit".
+    public static void ProfileLabelsPostfix(NOpenProfileScreenButton __instance)
+    {
+        try
+        {
+            if (!IsAndroid || ShowPortUi)
+                return;
+            if (Traverse.Create(__instance).Field("_description").GetValue<MegaCrit.Sts2.addons.mega_text.MegaLabel>() is { } description)
+                description.SetTextAutoSize(ModText.Ko("Tap to edit", "탭하여 편집"));
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Profile caption override failed: {exception.Message}");
+        }
+    }
+
+    // The map "share" button saves a PNG and opens the PC file manager; nothing on a phone.
+    public static void MapShareInitializePostfix(Control __instance)
+    {
+        if (!ShowPortUi)
+            HideButton(__instance);
     }
 
     // Fast mode's room fade-out waits 0.3 s and then fades for 0.3 s before the next room
@@ -202,10 +259,16 @@ public static class NativeFeel
                 return;
             var visible = menu.GetViewportRect().Size;
             var separation = Mathf.RoundToInt(visible.Y * MenuPitchRatio - buttonHeight);
-            if (separation <= list.GetThemeConstant(SeparationName))
-                return;
-            list.AddThemeConstantOverride(SeparationName, separation);
-            Callable.From(() => KeepMenuOnScreen(list)).CallDeferred();
+            if (separation > list.GetThemeConstant(SeparationName))
+                list.AddThemeConstantOverride(SeparationName, separation);
+            // STS1 mobile: a left-aligned text column (sts1-mobile-ui.md 15), each item
+            // hugging its text instead of a centred column under the logo.
+            foreach (var child in list.GetChildren())
+            {
+                if (child is Control control && control.SizeFlagsHorizontal != Control.SizeFlags.ShrinkBegin)
+                    control.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+            }
+            Callable.From(() => PlaceMenuLikeSts1(list)).CallDeferred();
         }
         catch (Exception exception)
         {
@@ -213,14 +276,21 @@ public static class NativeFeel
         }
     }
 
-    private static void KeepMenuOnScreen(Control list)
+    private const float MenuLeftRatio = 0.05f;
+    private const float MenuTopRatio = 0.53f;
+
+    private static void PlaceMenuLikeSts1(Control list)
     {
         if (!GodotObject.IsInstanceValid(list) || !list.IsInsideTree())
             return;
-        var limit = list.GetViewportRect().Size.Y * MenuBottomLimitRatio;
-        var overflow = list.GetGlobalRect().End.Y - limit;
-        if (overflow > 0f)
-            list.GlobalPosition -= new Vector2(0f, overflow);
+        var visible = list.GetViewportRect().Size;
+        var target = new Vector2(visible.X * MenuLeftRatio, visible.Y * MenuTopRatio);
+        var rect = list.GetGlobalRect();
+        var limit = visible.Y * MenuBottomLimitRatio;
+        if (target.Y + rect.Size.Y > limit)
+            target.Y = Math.Max(0f, limit - rect.Size.Y);
+        if (!rect.Position.IsEqualApprox(target))
+            list.GlobalPosition = target;
     }
 
     // The game's own version/date label stays (the official build shows it); only the
@@ -258,6 +328,12 @@ public static class NativeFeel
             HideButton(__instance.GetNodeOrNull<Control>("%Modding"));
             HideButton(__instance.GetNodeOrNull<Control>("%ModdingDivider"));
             HideFeedbackRow(__instance);
+            // Single-player mobile build: "show multiplayer map drawings" has nothing to show.
+            foreach (var node in __instance.FindChildren("*", "", true, false))
+            {
+                if (node is Control control && control.GetType().Name == "NShowMpMapDrawingsTickbox")
+                    HideSettingsRow(control);
+            }
         }
         catch (Exception exception)
         {
@@ -270,7 +346,11 @@ public static class NativeFeel
     // sits in a settings list; otherwise hide just the button.
     private static void HideFeedbackRow(Node settingsScreen)
     {
-        var button = settingsScreen.GetNodeOrNull<Control>("%FeedbackButton");
+        HideSettingsRow(settingsScreen.GetNodeOrNull<Control>("%FeedbackButton"));
+    }
+
+    private static void HideSettingsRow(Control button)
+    {
         if (button == null)
             return;
         var line = button.GetParent() as Control;

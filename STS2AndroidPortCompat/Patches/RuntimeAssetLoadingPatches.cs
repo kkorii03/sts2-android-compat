@@ -38,7 +38,7 @@ internal static class RuntimeAssetLoadingPatches
             foreach (var method in methods)
                 _harmony.Patch(method, transpiler: new HarmonyMethod(typeof(RuntimeAssetLoadingPatches), nameof(Transpiler)));
             _harmony.Patch(methods[3], prefix: new HarmonyMethod(typeof(RuntimeAssetLoadingPatches), nameof(VfxPrefix)));
-            PatchHelper.Log("Runtime resource sessions budgeted: 2ms cooperative frame budget, at most 8 items per phase; original completion and failures retained.");
+            PatchHelper.Log("Runtime resource sessions budgeted: 2ms cooperative frame budget, at most 8 items per phase (12ms / 32 behind a room transition); original completion and failures retained.");
         }
         catch (Exception exception)
         {
@@ -89,6 +89,33 @@ internal static class RuntimeAssetLoadingPatches
     private static bool VfxPrefix(AssetLoadingSession __instance) => Allow(__instance, 3);
     private static bool Allow(AssetLoadingSession session, int phase) => Budgets.GetValue(session, static _ => new Budget()).Take(phase);
 
+    // 2 ms/frame keeps gameplay smooth while assets stream in. Behind the black room
+    // transition (NTransition.InTransition) nothing moves, so a frame hitch is invisible;
+    // there the same queue may use 12 ms and 4x the items, which shortens the black
+    // screen between map and room (S24U feedback: "2-3 s black").
+    private const ulong VisibleBudgetUsec = 2000;
+    private const ulong CoveredBudgetUsec = 12000;
+    private const int CoveredItemMultiplier = 4;
+    private static ulong _coveredFrame = ulong.MaxValue;
+    private static bool _covered;
+
+    private static bool IsScreenCovered(ulong frame)
+    {
+        if (frame == _coveredFrame)
+            return _covered;
+        _coveredFrame = frame;
+        try
+        {
+            var transition = NGame.Instance?.Transition;
+            _covered = transition != null && GodotObject.IsInstanceValid(transition) && transition.InTransition;
+        }
+        catch
+        {
+            _covered = false;
+        }
+        return _covered;
+    }
+
     private struct FrameBudget
     {
         private ulong _frame;
@@ -104,10 +131,12 @@ internal static class RuntimeAssetLoadingPatches
             _maximumItems = maximumItems;
         }
 
-        internal bool TryBeginItem(ulong frame)
+        internal bool TryBeginItem(ulong frame, bool screenCovered)
         {
             ResetForFrame(frame);
-            if (_items >= _maximumItems || Time.GetTicksUsec() - _started >= 2000)
+            var maxItems = screenCovered ? _maximumItems * CoveredItemMultiplier : _maximumItems;
+            var budgetUsec = screenCovered ? CoveredBudgetUsec : VisibleBudgetUsec;
+            if (_items >= maxItems || Time.GetTicksUsec() - _started >= budgetUsec)
                 return false;
             _items++;
             return true;
@@ -138,7 +167,8 @@ internal static class RuntimeAssetLoadingPatches
             // Separate item quotas let status checks run even when a large request
             // queue is present. All phases still share the same 2ms wall budget.
             ref int count = ref (phase == 0 ? ref _finalized : ref phase == 1 ? ref _requested : ref phase == 2 ? ref _checked : ref _vfx);
-            if (count >= 8 || !_time.TryBeginItem(frame)) return false;
+            var covered = IsScreenCovered(frame);
+            if (count >= (covered ? 8 * CoveredItemMultiplier : 8) || !_time.TryBeginItem(frame, covered)) return false;
             count++;
             return true;
         }

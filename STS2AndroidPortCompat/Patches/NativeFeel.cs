@@ -42,6 +42,8 @@ public static class NativeFeel
         if (debugLabelType != null)
             PatchHelper.Patch(harmony, debugLabelType, "UpdateText", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(DebugInfoUpdateTextPostfix)));
 
+        PatchHelper.Patch(harmony, typeof(NTransition), "RoomFadeOut", prefix: PatchHelper.Method(typeof(NativeFeel), nameof(RoomFadeOutPrefix)));
+
         var settingsScreenType = typeof(NGame).Assembly.GetType("MegaCrit.Sts2.Core.Nodes.Screens.Settings.NSettingsScreen");
         if (settingsScreenType != null)
             PatchHelper.Patch(harmony, settingsScreenType, "_Ready", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(SettingsScreenReadyPostfix)));
@@ -103,6 +105,78 @@ public static class NativeFeel
         {
             PatchHelper.Log($"Native main-menu cleanup failed: {exception.Message}");
         }
+    }
+
+    // Fast mode's room fade-out waits 0.3 s and then fades for 0.3 s before the next room
+    // even starts loading. On the phone that idle wait reads as part of the "black screen";
+    // fade straight away in 0.2 s instead. Normal/Instant keep vanilla.
+    private const double FastRoomFadeOutSeconds = 0.2;
+    private static AccessTools.FieldRef<NTransition, Control> SimpleTransitionRef;
+    private static AccessTools.FieldRef<NTransition, Control> GradientTransitionRef;
+    private static AccessTools.FieldRef<NTransition, float> InitialGradientYRef;
+    private static AccessTools.FieldRef<NTransition, Tween> TweenRef;
+    private static System.Reflection.MethodInfo InTransitionSetter;
+    private static bool? _fastFadeReady;
+
+    private static bool FastFadeReady()
+    {
+        if (_fastFadeReady.HasValue)
+            return _fastFadeReady.Value;
+        try
+        {
+            SimpleTransitionRef = AccessTools.FieldRefAccess<NTransition, Control>("_simpleTransition");
+            GradientTransitionRef = AccessTools.FieldRefAccess<NTransition, Control>("_gradientTransition");
+            InitialGradientYRef = AccessTools.FieldRefAccess<NTransition, float>("_initialGradientYPosition");
+            TweenRef = AccessTools.FieldRefAccess<NTransition, Tween>("_tween");
+            InTransitionSetter = AccessTools.PropertySetter(typeof(NTransition), "InTransition");
+            _fastFadeReady = InTransitionSetter != null;
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Fast room fade-out members missing, using vanilla: {exception.Message}");
+            _fastFadeReady = false;
+        }
+        return _fastFadeReady.Value;
+    }
+
+    public static bool RoomFadeOutPrefix(NTransition __instance, ref System.Threading.Tasks.Task __result)
+    {
+        try
+        {
+            if (!IsAndroid || !FastFadeReady()
+                || MegaCrit.Sts2.Core.Saves.SaveManager.Instance?.PrefsSave?.FastMode != MegaCrit.Sts2.Core.Settings.FastModeType.Fast)
+                return true;
+            __result = FastRoomFadeOut(__instance);
+            return false;
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Fast room fade-out unavailable, using vanilla: {exception.Message}");
+            return true;
+        }
+    }
+
+    private static async System.Threading.Tasks.Task FastRoomFadeOut(NTransition transition)
+    {
+        InTransitionSetter.Invoke(transition, new object[] { true });
+        var simple = SimpleTransitionRef(transition);
+        var gradient = GradientTransitionRef(transition);
+        var modulate = simple.Modulate;
+        modulate.A = 0f;
+        simple.Modulate = modulate;
+        modulate = gradient.Modulate;
+        modulate.A = 1f;
+        gradient.Modulate = modulate;
+        var position = gradient.Position;
+        position.Y = InitialGradientYRef(transition);
+        gradient.Position = position;
+        TweenRef(transition)?.Kill();
+        var tween = transition.CreateTween().SetParallel();
+        TweenRef(transition) = tween;
+        tween.TweenProperty(simple, "modulate:a", 1f, FastRoomFadeOutSeconds)
+            .SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Quad);
+        if (await MegaCrit.Sts2.Core.Nodes.GodotExtensions.TweenHelper.AwaitFinished(tween, transition))
+            transition.MouseFilter = Control.MouseFilterEnum.Stop;
     }
 
     // STS1 mobile's main menu items sit ~9.2% of the screen height apart (centre to centre);

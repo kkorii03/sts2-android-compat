@@ -124,6 +124,18 @@ internal static class Sts1GapTests
         Require(!tip.Valid || !tip.Visible, "a mode switch drops the pinned tooltip");
         NHoverTipSet.Clear();
 
+        // S24U: the End Turn button rebuilt its tip at the next turn while the emulated
+        // mouse was still parked on it (finger long lifted); the long-press timer then
+        // revealed "End Turn (E) ..." with nobody touching the screen.
+        Input.LeftButtonPressed = false;
+        var parked = new Control();
+        tip = NHoverTipSet.CreateAndShow(parked);
+        Time.Msec += 5000;
+        tip._Process(0.1);
+        Require(!tip.Visible, "a tip created under a parked (not pressed) touch pointer stays hidden");
+        Input.LeftButtonPressed = true;
+        NHoverTipSet.Clear();
+
         var card = new Control();
         tip = NHoverTipSet.CreateAndShow(card);
         NGame.Instance._Input(new InputEventScreenTouch { Pressed = true });

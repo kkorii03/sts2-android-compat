@@ -14,8 +14,8 @@ namespace STS2Mobile.Patches;
 
 /// <summary>
 /// STS1-mobile style placement for the injected selection confirm buttons: after a
-/// tap selects an item, the confirm button appears right next to that item (below it
-/// first, then beside it, then above it) so the thumb that just tapped can confirm
+/// tap selects an item, the confirm button appears right next to that item (below it,
+/// sliding sideways if needed, then beside it; never above it) so the thumb that just tapped can confirm
 /// without crossing the screen.  A spot is accepted only when it stays inside the
 /// safe area (top bar band excluded), does not touch the selected item, and keeps a
 /// clearance from every other tappable control on the screen and from visible hover
@@ -197,15 +197,22 @@ internal static class MobileConfirmPlacement
         var w = footprintSize.X;
         var h = footprintSize.Y;
         var centerX = item.GetCenter().X;
-        var candidates = new[]
+        // Below the item first, sliding sideways (nearest first) past a centred Skip
+        // button; then beside the item's lower edge. Never above: on phone screens the
+        // space above a selected card is the screen title banner, which is not
+        // tappable (so not an obstacle) but must not be covered (S24U card reward).
+        var candidates = new List<Vector2>();
+        var belowY = item.End.Y + Gap;
+        var step = Math.Max(8f, w / 4f);
+        var reach = item.Size.X / 2f + 2f * w;
+        candidates.Add(new Vector2(centerX - w / 2f, belowY));
+        for (var dx = step; dx <= reach; dx += step)
         {
-            new Vector2(centerX - w / 2f, item.End.Y + Gap),          // below, centered
-            new Vector2(item.End.X - w, item.End.Y + Gap),            // below, right-aligned
-            new Vector2(item.Position.X, item.End.Y + Gap),           // below, left-aligned
-            new Vector2(item.End.X + Gap, item.End.Y - h),            // right side, lower edge
-            new Vector2(item.Position.X - Gap - w, item.End.Y - h),   // left side, lower edge
-            new Vector2(centerX - w / 2f, item.Position.Y - Gap - h), // above, centered
-        };
+            candidates.Add(new Vector2(centerX - w / 2f + dx, belowY));
+            candidates.Add(new Vector2(centerX - w / 2f - dx, belowY));
+        }
+        candidates.Add(new Vector2(item.End.X + Gap, item.End.Y - h));          // right side, lower edge
+        candidates.Add(new Vector2(item.Position.X - Gap - w, item.End.Y - h)); // left side, lower edge
 
         foreach (var topLeft in candidates)
         {

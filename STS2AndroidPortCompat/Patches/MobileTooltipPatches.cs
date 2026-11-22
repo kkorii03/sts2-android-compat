@@ -185,7 +185,18 @@ public static class MobileTooltipPatches
             }
 
             if (!_pressActive)
+            {
+                // Touch leaves the emulated mouse parked where the finger lifted, so a
+                // control that (re)creates its tip later - the End Turn button when the
+                // next turn starts - would look "hovered" and get revealed by the
+                // long-press timer with no finger down. Only a real press may start one.
+                if (!IsPointerDown())
+                {
+                    SetTipVisible(__result, false);
+                    return;
+                }
                 BeginPress(GetCurrentPointerPosition(owner), owner);
+            }
 
             if (_pressActive && IsPressOwner(owner))
                 SetWeak(ref _pendingOwner, owner);
@@ -390,6 +401,8 @@ public static class MobileTooltipPatches
             return;
 
         var current = Resolve(_pendingOwner) ?? Resolve(_revealedOwner);
+        if (!_pressActive && !IsPointerDown())
+            return;
         if (!_pressActive || (current != null && !IsSameOwner(owner, current)))
         {
             BeginPress(GetCurrentPointerPosition(owner), owner);
@@ -1008,6 +1021,18 @@ public static class MobileTooltipPatches
         catch
         {
             return Vector2.Zero;
+        }
+    }
+
+    private static bool IsPointerDown()
+    {
+        try
+        {
+            return Input.IsMouseButtonPressed(MouseButton.Left);
+        }
+        catch
+        {
+            return true;
         }
     }
 

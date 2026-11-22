@@ -210,6 +210,10 @@ namespace Godot
                 else if (OS.Platform != "Android") PointerVisible = true;
             }
         }
+        // Emulated left button state; true keeps the older tooltip fixtures on their
+        // "finger is down" path.
+        public static bool LeftButtonPressed = true;
+        public static bool IsMouseButtonPressed(MouseButton button) => button == MouseButton.Left && LeftButtonPressed;
         public static void SetCustomMouseCursor(Image image, CursorShape shape, Vector2 hotSpot)
         {
             CursorImage = image;

@@ -212,6 +212,9 @@ public static class LifecycleAndPerformancePatches
         }
     }
 
+    private const double PostMenuPreloadDelaySeconds = 2.5;
+    private const ulong BackgroundPreloadSliceMs = 6;
+
     private static async Task WaitForFramesAsync(int frames)
     {
         var tree = Engine.GetMainLoop() as SceneTree;
@@ -408,6 +411,15 @@ public static class LifecycleAndPerformancePatches
     private static async Task RunSerializedAndroidPreloadAsync(AndroidStartupLoadingScreen loadingScreen)
     {
         using var phase = EnterPreloadPhase("startup-common-main-menu");
+        if (loadingScreen == null)
+        {
+            // Background run right after the main menu: let the menu's 2 s fade-in from black
+            // finish first. Starting at once froze that fade and left the screen black for
+            // ~8 s after the logo on the S24U.
+            var tree = Engine.GetMainLoop() as SceneTree;
+            if (tree != null)
+                await tree.ToSignal(tree.CreateTimer(PostMenuPreloadDelaySeconds), SceneTreeTimer.SignalName.Timeout);
+        }
         PreloadManager.Cache.UnloadMissedCacheAssets();
         var assetPaths = CollectCommonAndMainMenuAssetPaths();
         PatchHelper.Log($"Android common/main-menu preload begin: {assetPaths.Count:N0} resources.");
@@ -420,6 +432,7 @@ public static class LifecycleAndPerformancePatches
         int nullLoads = 0;
         int failed = 0;
         ulong started = Time.GetTicksMsec();
+        ulong frameStarted = started;
         foreach (string path in assetPaths)
         {
             try
@@ -449,11 +462,18 @@ public static class LifecycleAndPerformancePatches
                 PatchHelper.Log($"Android preload skipped {path}: {exception.Message}");
             }
             loaded++;
-            if ((loaded % 8) == 0)
+            // With a loading screen up, 8 loads per frame is fine; behind the visible main
+            // menu a fixed 8 synchronous loads made 100+ ms frames. There, yield as soon as
+            // this frame has spent its small time slice (at least one load per frame).
+            bool yieldNow = loadingScreen != null
+                ? (loaded % 8) == 0
+                : Time.GetTicksMsec() - frameStarted >= BackgroundPreloadSliceMs;
+            if (yieldNow)
             {
                 float progress = assetPaths.Count == 0 ? 1f : 0.05f + (0.9f * loaded / assetPaths.Count);
                 loadingScreen?.SetStatus("Optimizing startup...", ModText.Ko("Preloading ", "미리 불러오는 중 ") + $"{loaded:N0}/{assetPaths.Count:N0}: {GetResourceDisplayName(path)}", progress);
                 await WaitForFramesAsync(1);
+                frameStarted = Time.GetTicksMsec();
             }
         }
         loadingScreen?.SetStatus("Optimizing startup...", ModText.Ko($"Preloaded {loaded:N0}/{assetPaths.Count:N0} resources", $"리소스 {loaded:N0}/{assetPaths.Count:N0}개 미리 불러옴"), 0.98f);

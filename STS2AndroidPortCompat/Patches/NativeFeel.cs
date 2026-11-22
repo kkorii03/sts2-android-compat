@@ -47,6 +47,16 @@ public static class NativeFeel
         PatchHelper.Patch(harmony, typeof(NTransition), "FadeIn", prefix: PatchHelper.Method(typeof(NativeFeel), nameof(TransitionFadeInPrefix)));
         try
         {
+            var launch = AccessTools.Method(typeof(NGame), "LaunchMainMenu", new[] { typeof(bool) });
+            if (launch != null)
+                harmony.Patch(launch, prefix: new HarmonyMethod(PatchHelper.Method(typeof(NativeFeel), nameof(LaunchMainMenuLogoPrefix))) { priority = Priority.First });
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"FAILED intro logo patch: {exception.Message}");
+        }
+        try
+        {
             var locAdd = AccessTools.Method(typeof(MegaCrit.Sts2.Core.Localization.LocString), "Add", new[] { typeof(string), typeof(string) });
             if (locAdd != null)
             {
@@ -148,6 +158,29 @@ public static class NativeFeel
     private static bool _bootCoverHidden;
 
     public static void TransitionFadeInPrefix() => HideBootCover();
+
+    // STS1 mobile: studio logo ~2 s after the tap, held while loading, then the menu. When
+    // the boot cover already shows the game's logo (assets/boot_logo.png in the personal
+    // APK) for the whole engine boot, playing the ~9 s logo animation again would double
+    // it; go to the menu instead. Without that image the vanilla logo choice stands.
+    public static void LaunchMainMenuLogoPrefix(ref bool __0)
+    {
+        try
+        {
+            if (__0 || ShowPortUi || !IsAndroid)
+                return;
+            var wrapper = (GodotObject)Engine.GetSingleton("JavaClassWrapper").Call("wrap", "com.godot.game.GodotApp");
+            if (wrapper.Call("hasBootLogoFromGame").AsBool())
+            {
+                __0 = true;
+                PatchHelper.Log("Boot cover shows the game logo; skipping the repeated logo animation.");
+            }
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Boot logo check failed; keeping the logo animation: {exception.Message}");
+        }
+    }
 
     private static void HideBootCover()
     {

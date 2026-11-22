@@ -18,6 +18,7 @@ public static class NativeFeel
 {
     public const string DeveloperModeKey = "android_developer_mode";
     private const string FastModeDefaultKey = "mobile_fast_mode_default_applied";
+    private const string HighRefreshDefaultKey = "mobile_120hz_default_applied";
 
     public static bool IsAndroid => OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase);
 
@@ -88,6 +89,22 @@ public static class NativeFeel
                     MegaCrit.Sts2.Core.Saves.SaveManager.Instance.SavePrefsFile();
                 }
                 AndroidSettingsBridge.SetBool(FastModeDefaultKey, true);
+            }
+
+            // The S24 Ultra panel does 120 Hz; the first builds defaulted to 60 Hz plus the
+            // PC 60 fps cap. Move once to 120 Hz + 120 fps (user request); "Battery saver
+            // (60 Hz)" in the Mobile tab still switches both back to 60.
+            if (!AndroidSettingsBridge.GetBool(HighRefreshDefaultKey, false))
+            {
+                AndroidSettingsBridge.SetString("android_display_refresh_rate_mode", "high");
+                AndroidInGameSettingsPatches.ApplyDisplayRefreshRateMode("high");
+                AndroidInGameSettingsPatches.SetGameFpsLimit(120);
+                AndroidSettingsBridge.SetBool(HighRefreshDefaultKey, true);
+            }
+            else if (string.Equals(AndroidSettingsBridge.GetString("android_display_refresh_rate_mode", "high"), "high", StringComparison.OrdinalIgnoreCase)
+                && Engine.MaxFps != 120)
+            {
+                Engine.MaxFps = 120;
             }
         }
         catch (Exception exception)

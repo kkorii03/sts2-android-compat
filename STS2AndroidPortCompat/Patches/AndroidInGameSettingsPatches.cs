@@ -251,6 +251,7 @@ public static class AndroidInGameSettingsPatches
                 var mode = enabled ? "60hz" : "high";
                 AndroidSettingsBridge.SetString("android_display_refresh_rate_mode", mode);
                 ApplyDisplayRefreshRateMode(mode);
+                SetGameFpsLimit(enabled ? 60 : 120);
             });
 
         if (!NativeFeel.ShowPortUi)
@@ -408,7 +409,30 @@ public static class AndroidInGameSettingsPatches
         }).CallDeferred();
     }
 
-    private static void ApplyDisplayRefreshRateMode(string mode)
+    /// <summary>
+    /// The panel refresh rate and the game's own frame cap must move together: 120 Hz with
+    /// the PC default 60 fps cap gave uneven 29-38 ms frames (upstream issue #94).
+    /// </summary>
+    internal static void SetGameFpsLimit(int fps)
+    {
+        try
+        {
+            var settings = MegaCrit.Sts2.Core.Saves.SaveManager.Instance?.SettingsSave;
+            if (settings != null && settings.FpsLimit != fps)
+            {
+                settings.FpsLimit = fps;
+                MegaCrit.Sts2.Core.Saves.SaveManager.Instance.SaveSettings();
+            }
+            Engine.MaxFps = fps;
+            PatchHelper.Log($"Game frame cap set to {fps} fps.");
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"Setting game frame cap failed: {exception.Message}");
+        }
+    }
+
+    internal static void ApplyDisplayRefreshRateMode(string mode)
     {
         if (!OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase))
             return;

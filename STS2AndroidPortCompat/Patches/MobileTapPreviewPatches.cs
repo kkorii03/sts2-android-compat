@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -191,7 +192,7 @@ public static class MobileTapPreviewPatches
         {
             try
             {
-                var isFocusedField = typeof(NCardHolder).GetField("_isFocused", BindingFlags.NonPublic | BindingFlags.Instance);
+                var isFocusedField = Members.IsFocused;
                 if (isFocusedField?.GetValue(__instance) is not true)
                 {
                     isFocusedField?.SetValue(__instance, true);
@@ -377,7 +378,7 @@ public static class MobileTapPreviewPatches
                 var hitbox = holder.Hitbox;
                 var hovered = holder.Visible && hitbox != null && hitbox.IsInsideTree()
                     && hitbox.GetGlobalRect().HasPoint(holder.GetViewport().GetMousePosition());
-                typeof(NCardHolder).GetField("_isHovered", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(holder, hovered);
+                Members.IsHovered?.SetValue(holder, hovered);
                 InvokeRefreshFocusState(holder);
             }
             catch (Exception exception)
@@ -466,7 +467,7 @@ public static class MobileTapPreviewPatches
     {
         try
         {
-            var method = typeof(NPlayerHand).GetMethod("AreCardActionsAllowed", BindingFlags.NonPublic | BindingFlags.Instance);
+            var method = Members.AreCardActionsAllowed;
             return method == null || (bool)method.Invoke(hand, null);
         }
         catch
@@ -545,9 +546,9 @@ public static class MobileTapPreviewPatches
     {
         try
         {
-            var isHoveredField = typeof(NCardHolder).GetField("_isHovered", BindingFlags.NonPublic | BindingFlags.Instance);
+            var isHoveredField = Members.IsHovered;
             isHoveredField?.SetValue(holder, true);
-            var isFocusedField = typeof(NCardHolder).GetField("_isFocused", BindingFlags.NonPublic | BindingFlags.Instance);
+            var isFocusedField = Members.IsFocused;
             if (isFocusedField?.GetValue(holder) is not true)
             {
                 isFocusedField?.SetValue(holder, true);
@@ -647,9 +648,9 @@ public static class MobileTapPreviewPatches
     {
         if (holder == null || !GodotObject.IsInstanceValid(holder))
             return;
-        var isHoveredField = typeof(NCardHolder).GetField("_isHovered", BindingFlags.NonPublic | BindingFlags.Instance);
+        var isHoveredField = Members.IsHovered;
         isHoveredField?.SetValue(holder, false);
-        var isFocusedField = typeof(NCardHolder).GetField("_isFocused", BindingFlags.NonPublic | BindingFlags.Instance);
+        var isFocusedField = Members.IsFocused;
         if (isFocusedField?.GetValue(holder) is true)
         {
             isFocusedField.SetValue(holder, false);
@@ -685,19 +686,18 @@ public static class MobileTapPreviewPatches
 
     private static object GetFocusedHolder(NPlayerHand hand)
     {
-        return typeof(NPlayerHand).GetProperty("FocusedHolder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(hand);
+        return Members.FocusedHolder?.GetValue(hand);
     }
 
     private static void WriteFocusedHolder(NPlayerHand hand, NHandCardHolder holder)
     {
-        var focusedProperty = typeof(NPlayerHand).GetProperty("FocusedHolder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        var setter = focusedProperty?.GetSetMethod(true);
+        var setter = Members.FocusedHolderSetter;
         if (setter != null)
         {
             setter.Invoke(hand, new object[] { holder });
             return;
         }
-        typeof(NPlayerHand).GetField("<FocusedHolder>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(hand, holder);
+        Members.FocusedHolderBackingField?.SetValue(hand, holder);
     }
 
     private static bool HandleMobileTapPreviewDirectDrag(NPlayerHand hand, InputEvent input)
@@ -1062,7 +1062,7 @@ public static class MobileTapPreviewPatches
     {
         try
         {
-            typeof(NPlayerHand).GetField("_lastFocusedHolderIdx", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(hand, holder.GetIndex());
+            Members.LastFocusedHolderIndex?.SetValue(hand, holder.GetIndex());
         }
         catch
         {
@@ -1082,12 +1082,12 @@ public static class MobileTapPreviewPatches
 
     private static void InvokeRefreshFocusState(NCardHolder holder)
     {
-        holder.GetType().GetMethod("RefreshFocusState", BindingFlags.NonPublic | BindingFlags.Instance)?.Invoke(holder, null);
+        Members.HolderMethod(holder.GetType(), "RefreshFocusState")?.Invoke(holder, null);
     }
 
     private static void InvokeDoCardHoverEffects(NCardHolder holder, bool isHovered)
     {
-        holder.GetType().GetMethod("DoCardHoverEffects", BindingFlags.NonPublic | BindingFlags.Instance)?.Invoke(holder, new object[] { isHovered });
+        Members.HolderMethod(holder.GetType(), "DoCardHoverEffects")?.Invoke(holder, new object[] { isHovered });
     }
 
     private static bool IsSameValidHolder(NCardHolder current, NHandCardHolder candidate)
@@ -1110,6 +1110,28 @@ public static class MobileTapPreviewPatches
         PutDown,
         Play,
         None,
+    }
+
+    // Reflection members the hand/holder paths used to look up on every call
+    // (AreCardActionsAllowed runs on each drag event while a card is armed).
+    // A nested class keeps initialization lazy and confined: a lookup that throws
+    // surfaces at the call site (inside the same try/catch as before) instead of
+    // breaking MobileTapPreviewPatches' own type initializer.
+    private static class Members
+    {
+        private const BindingFlags Instance = BindingFlags.NonPublic | BindingFlags.Instance;
+        internal static readonly FieldInfo IsFocused = typeof(NCardHolder).GetField("_isFocused", Instance);
+        internal static readonly FieldInfo IsHovered = typeof(NCardHolder).GetField("_isHovered", Instance);
+        internal static readonly MethodInfo AreCardActionsAllowed = typeof(NPlayerHand).GetMethod("AreCardActionsAllowed", Instance);
+        internal static readonly PropertyInfo FocusedHolder = typeof(NPlayerHand).GetProperty("FocusedHolder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        internal static readonly MethodInfo FocusedHolderSetter = FocusedHolder?.GetSetMethod(true);
+        internal static readonly FieldInfo FocusedHolderBackingField = typeof(NPlayerHand).GetField("<FocusedHolder>k__BackingField", Instance);
+        internal static readonly FieldInfo LastFocusedHolderIndex = typeof(NPlayerHand).GetField("_lastFocusedHolderIdx", Instance);
+        // Holder methods are resolved on the runtime holder type, as before.
+        private static readonly ConcurrentDictionary<(Type Type, string Name), MethodInfo> HolderMethods = new();
+
+        internal static MethodInfo HolderMethod(Type type, string name) =>
+            HolderMethods.GetOrAdd((type, name), static key => key.Type.GetMethod(key.Name, Instance));
     }
 
     private sealed class PreviewState

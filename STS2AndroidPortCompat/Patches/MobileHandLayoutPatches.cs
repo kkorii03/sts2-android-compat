@@ -12,6 +12,15 @@ namespace STS2Mobile.Patches;
 
 public static class MobileHandLayoutPatches
 {
+    private const BindingFlags MemberFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+    // Reflection results per hand type, resolved on first use (not per call/holder).
+    private static Type _activeHoldersType;
+    private static PropertyInfo _activeHoldersProperty;
+    private static Type _focusedHolderType;
+    private static PropertyInfo _focusedHolderProperty;
+    // OS.HasFeature("mobile") is fixed for the process; 0 = not sampled, 1 = true, 2 = false.
+    private static int _mobileFeature;
+
     public static void Apply(Harmony harmony)
     {
         PatchHelper.Patch(harmony, typeof(NPlayerHand), "RefreshLayout",
@@ -31,7 +40,7 @@ public static class MobileHandLayoutPatches
             if (Mathf.IsZeroApprox(yOffset) && cardFactor <= 1f)
                 return;
 
-            var activeHolders = __instance.GetType().GetProperty("ActiveHolders", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(__instance) as System.Collections.IEnumerable;
+            var activeHolders = GetActiveHoldersProperty(__instance.GetType())?.GetValue(__instance) as System.Collections.IEnumerable;
             if (activeHolders == null)
                 return;
 
@@ -88,7 +97,7 @@ public static class MobileHandLayoutPatches
         {
             if (Mathf.IsZeroApprox(GetAdditionalHandCardYOffset()) && GetHandCardScaleFactor() <= 1f)
                 return;
-            if (__instance.GetType().GetProperty("ActiveHolders", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(__instance) is not System.Collections.IEnumerable activeHolders)
+            if (GetActiveHoldersProperty(__instance.GetType())?.GetValue(__instance) is not System.Collections.IEnumerable activeHolders)
                 return;
             var capture = new Dictionary<ulong, (Vector2 Position, Vector2 Scale)>();
             foreach (var item in activeHolders)
@@ -112,13 +121,45 @@ public static class MobileHandLayoutPatches
     // sunk into the enlarged row, so it gets the resting adjustments like its neighbours.
     private static bool IsFocusedHolder(object playerHand, NHandCardHolder holder)
     {
-        var focused = playerHand.GetType().GetProperty("FocusedHolder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(playerHand);
+        var focused = GetFocusedHolderProperty(playerHand.GetType())?.GetValue(playerHand);
         return ReferenceEquals(focused, holder);
+    }
+
+    private static PropertyInfo GetActiveHoldersProperty(Type type)
+    {
+        if (!ReferenceEquals(type, _activeHoldersType))
+        {
+            // Assigned only after a successful lookup, so a throwing lookup keeps
+            // failing (and being logged) exactly as the uncached call did.
+            _activeHoldersProperty = type.GetProperty("ActiveHolders", MemberFlags);
+            _activeHoldersType = type;
+        }
+        return _activeHoldersProperty;
+    }
+
+    private static PropertyInfo GetFocusedHolderProperty(Type type)
+    {
+        if (!ReferenceEquals(type, _focusedHolderType))
+        {
+            _focusedHolderProperty = type.GetProperty("FocusedHolder", MemberFlags);
+            _focusedHolderType = type;
+        }
+        return _focusedHolderProperty;
+    }
+
+    private static bool HasMobileFeature()
+    {
+        var cached = _mobileFeature;
+        if (cached != 0)
+            return cached == 1;
+        var mobile = OS.HasFeature("mobile");
+        _mobileFeature = mobile ? 1 : 2;
+        return mobile;
     }
 
     private static float GetHandCardScaleFactor()
     {
-        if (!OS.HasFeature("mobile"))
+        if (!HasMobileFeature())
             return 1f;
         return MobileCombatSizing.Factor(
             AndroidSettingsBridge.GetInt(MobileCombatSizing.HandCardScaleKey, MobileCombatSizing.HandCardScaleDefault),
@@ -151,7 +192,7 @@ public static class MobileHandLayoutPatches
 
     private static float GetAdditionalHandCardYOffset()
     {
-        if (!OS.HasFeature("mobile"))
+        if (!HasMobileFeature())
             return 0f;
         if (!AndroidSettingsBridge.GetBool("show_more_hand_card_text", true))
             return 0f;

@@ -25,6 +25,12 @@ public static class AndroidInputCompatPatches
     internal const string BackKeyScreenButtonSetting = "mobile_back_key_screen_button";
     private static readonly FieldInfo HotkeyPressedBindingsField = typeof(NHotkeyManager).GetField("_hotkeyPressedBindings", BindingFlags.NonPublic | BindingFlags.Instance);
     private static readonly FieldInfo BlockingScreensField = typeof(NHotkeyManager).GetField("_blockingScreens", BindingFlags.NonPublic | BindingFlags.Instance);
+    private static readonly FieldInfo ControllerInputMapField = typeof(NInputManager).GetField("_controllerInputMap", BindingFlags.NonPublic | BindingFlags.Instance);
+    // OS feature/name answers are fixed for the process; sampled on first input
+    // instead of two engine interop calls (plus a string) per input event.
+    // 0 = not sampled yet, 1 = true, 2 = false.
+    private static int _mobileRuntime;
+    private static int _androidRuntime;
     private static readonly Dictionary<(int Device, StringName Action), bool> TriggerStates = new();
     private static readonly Dictionary<int, TouchPointState> ActiveTouchPoints = new();
     private static readonly HashSet<int> SuppressedSecondaryTouchIndices = new();
@@ -76,7 +82,7 @@ public static class AndroidInputCompatPatches
     {
         try
         {
-            if (!OS.HasFeature("mobile") && !OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase))
+            if (!IsMobileRuntime())
                 return true;
             if (TryHandleMobileBackInput(__instance, inputEvent))
                 return false;
@@ -98,7 +104,7 @@ public static class AndroidInputCompatPatches
     {
         try
         {
-            if (inputEvent is not InputEventJoypadMotion || !OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase))
+            if (inputEvent is not InputEventJoypadMotion || !IsAndroidRuntime())
                 return true;
             foreach (var mapped in EnumerateCompatibleControllerEvents(inputEvent))
                 DispatchMappedControllerInput(__instance, mapped.Action, mapped.Pressed);
@@ -108,6 +114,26 @@ public static class AndroidInputCompatPatches
             PatchHelper.Log($"Android controller compat dispatch failed: {exception.Message}");
         }
         return true;
+    }
+
+    private static bool IsMobileRuntime()
+    {
+        var cached = _mobileRuntime;
+        if (cached != 0)
+            return cached == 1;
+        var mobile = OS.HasFeature("mobile") || OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase);
+        _mobileRuntime = mobile ? 1 : 2;
+        return mobile;
+    }
+
+    private static bool IsAndroidRuntime()
+    {
+        var cached = _androidRuntime;
+        if (cached != 0)
+            return cached == 1;
+        var android = OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase);
+        _androidRuntime = android ? 1 : 2;
+        return android;
     }
 
     private static bool TryHandleMobileBackInput(Node inputManager, InputEvent inputEvent)
@@ -264,7 +290,7 @@ public static class AndroidInputCompatPatches
 
     private static Dictionary<StringName, StringName> GetControllerInputMap(NInputManager inputManager)
     {
-        return typeof(NInputManager).GetField("_controllerInputMap", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(inputManager) as Dictionary<StringName, StringName>
+        return ControllerInputMapField?.GetValue(inputManager) as Dictionary<StringName, StringName>
             ?? new Dictionary<StringName, StringName>();
     }
 

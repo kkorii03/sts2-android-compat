@@ -163,11 +163,19 @@ public static class DevToolsHost
     private static string ResponsePath => Path.Combine(DevToolsDir, LegacyResponseFileName);
     private static string HostMarkerPath => Path.Combine(DevToolsDir, HostMarkerFileName);
 
+    // AppPaths.DataDir is a process constant and, once accepted as the app files
+    // dir, is always the first answer; remember it so the 120 ms request poll no
+    // longer repeats GetFullPath + Directory/File.Exists for it on every tick.
+    private static string _acceptedDataDir;
+
     private static string ResolveDataDir()
     {
+        var accepted = _acceptedDataDir;
+        if (accepted != null)
+            return accepted;
         var appPathsDataDir = SafeResolveAppPathsDataDir();
         if (TryAcceptJavaFilesDir(appPathsDataDir, out var appPathsAccepted))
-            return appPathsAccepted;
+            return _acceptedDataDir = appPathsAccepted;
 
         try
         {

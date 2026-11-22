@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -27,6 +28,7 @@ public static class MerchantSelectionConfirmationPatches
     private static readonly HashSet<NMerchantSlot> AllowedPurchases = new();
     private static readonly object AllowedPurchasesLock = new();
     private static readonly BindingFlags InstanceFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+    private static readonly ConcurrentDictionary<(Type Type, string Name), FieldInfo> FieldCache = new();
     private static readonly MethodInfo SlotSelectedMethod = typeof(NMerchantSlot).GetMethod("OnSelected", InstanceFlags, null, Type.EmptyTypes, null)
         ?? throw new MissingMethodException(typeof(NMerchantSlot).FullName, "OnSelected");
 
@@ -311,14 +313,24 @@ public static class MerchantSelectionConfirmationPatches
 
     private static object GetField(object target, string name)
     {
-        for (var type = target?.GetType(); type != null; type = type.BaseType)
-        {
-            var field = type.GetField(name, InstanceFlags);
-            if (field != null)
-                return field.GetValue(target);
-        }
-        return null;
+        if (target == null)
+            return null;
+        return FindField(target.GetType(), name)?.GetValue(target);
     }
+
+    // Runs on every touch/mouse GUI event over a shop slot: resolve each
+    // (runtime type, name) hierarchy walk once, misses included.
+    private static FieldInfo FindField(Type targetType, string name) =>
+        FieldCache.GetOrAdd((targetType, name), static key =>
+        {
+            for (var type = key.Type; type != null; type = type.BaseType)
+            {
+                var field = type.GetField(key.Name, InstanceFlags);
+                if (field != null)
+                    return field;
+            }
+            return null;
+        });
 
     private static MerchantConfirmState GetState(NMerchantInventory inventory)
     {

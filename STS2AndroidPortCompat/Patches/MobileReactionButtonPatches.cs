@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Reflection;
 using NumericsMatrix3x2 = System.Numerics.Matrix3x2;
 using NumericsVector2 = System.Numerics.Vector2;
@@ -737,39 +738,54 @@ public partial class AndroidMobileReactionButton : Control
             marker.Texture = mapMarker;
     }
 
+    // Member lookups per (runtime type, name), including misses. The drag path
+    // reads/writes wheel state on every move event; GetMethods() alone allocated
+    // a fresh MethodInfo[] per call.
+    private static readonly ConcurrentDictionary<(Type Type, string Name), FieldInfo> FieldCache = new();
+    private static readonly ConcurrentDictionary<(Type Type, string Name), PropertyInfo> PropertyCache = new();
+    private static readonly ConcurrentDictionary<(Type Type, string Name, int Arity), MethodInfo> MethodCache = new();
+
+    private static FieldInfo FindField(Type type, string name) =>
+        FieldCache.GetOrAdd((type, name), static key => key.Type.GetField(key.Name, PrivateInstance));
+
     private static object GetField(object target, string name)
     {
         if (target == null)
             return null;
-        return target.GetType().GetField(name, PrivateInstance)?.GetValue(target);
+        return FindField(target.GetType(), name)?.GetValue(target);
     }
 
     private static void SetField(object target, string name, object value)
     {
         if (target == null)
             return;
-        target.GetType().GetField(name, PrivateInstance)?.SetValue(target, value);
+        FindField(target.GetType(), name)?.SetValue(target, value);
     }
 
     private static object GetProperty(object target, string name)
     {
         if (target == null)
             return null;
-        return target.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(target);
+        return PropertyCache.GetOrAdd((target.GetType(), name),
+            static key => key.Type.GetProperty(key.Name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))?.GetValue(target);
     }
 
     private static object Invoke(object target, string methodName, params object[] arguments)
     {
         if (target == null)
             return null;
-        var methods = target.GetType().GetMethods(PrivateInstance | BindingFlags.Public);
-        foreach (var method in methods)
+        // Same pick as before: the first method in GetMethods() order with this
+        // name and parameter count.
+        var method = MethodCache.GetOrAdd((target.GetType(), methodName, arguments.Length), static key =>
         {
-            if (method.Name != methodName || method.GetParameters().Length != arguments.Length)
-                continue;
-            return method.Invoke(target, arguments);
-        }
-        return null;
+            foreach (var candidate in key.Type.GetMethods(PrivateInstance | BindingFlags.Public))
+            {
+                if (candidate.Name == key.Name && candidate.GetParameters().Length == key.Arity)
+                    return candidate;
+            }
+            return null;
+        });
+        return method?.Invoke(target, arguments);
     }
 
     private void BuildVisuals()

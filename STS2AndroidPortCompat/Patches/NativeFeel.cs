@@ -44,19 +44,7 @@ public static class NativeFeel
             PatchHelper.Patch(harmony, debugLabelType, "UpdateText", postfix: PatchHelper.Method(typeof(NativeFeel), nameof(DebugInfoUpdateTextPostfix)));
 
         PatchHelper.Patch(harmony, typeof(NTransition), "RoomFadeOut", prefix: PatchHelper.Method(typeof(NativeFeel), nameof(RoomFadeOutPrefix)));
-        try
-        {
-            var launch = AccessTools.Method(typeof(NGame), "LaunchMainMenu", new[] { typeof(bool) });
-            if (launch != null)
-            {
-                harmony.Patch(launch, prefix: new HarmonyMethod(PatchHelper.Method(typeof(NativeFeel), nameof(LaunchMainMenuSkipLogoPrefix))) { priority = Priority.First });
-                PatchHelper.Log("Patched NGame.LaunchMainMenu to skip the intro logo on Android");
-            }
-        }
-        catch (Exception exception)
-        {
-            PatchHelper.Log($"FAILED intro logo skip patch: {exception.Message}");
-        }
+        PatchHelper.Patch(harmony, typeof(NTransition), "FadeIn", prefix: PatchHelper.Method(typeof(NativeFeel), nameof(TransitionFadeInPrefix)));
         try
         {
             var locAdd = AccessTools.Method(typeof(MegaCrit.Sts2.Core.Localization.LocString), "Add", new[] { typeof(string), typeof(string) });
@@ -131,6 +119,7 @@ public static class NativeFeel
     public static void MainMenuPostfix(NMainMenu __instance)
     {
         RuntimeAssetLoadingPatches.MarkBootFinished();
+        HideBootCover();
         try
         {
             if (ShowPortUi)
@@ -153,18 +142,26 @@ public static class NativeFeel
         }
     }
 
-    // Cold start on the S24U took 21 s to the menu, ~9 s of it the Mega Crit logo animation,
-    // which played even with "Skip intro logo" ticked. A phone game should open straight to
-    // its menu: always skip it on Android (developer mode keeps the vanilla choice).
-    public static void LaunchMainMenuSkipLogoPrefix(ref bool __0)
+    // The Java GodotApp keeps the game icon over the engine's black boot surface (~8 s on
+    // the S24U). The first NTransition.FadeIn is the game revealing its own logo (or the
+    // menu when the logo is skipped): drop the cover then; the main menu is a fallback.
+    private static bool _bootCoverHidden;
+
+    public static void TransitionFadeInPrefix() => HideBootCover();
+
+    private static void HideBootCover()
     {
+        if (_bootCoverHidden || !IsAndroid)
+            return;
+        _bootCoverHidden = true;
         try
         {
-            if (!ShowPortUi)
-                __0 = true;
+            var wrapper = (GodotObject)Engine.GetSingleton("JavaClassWrapper").Call("wrap", "com.godot.game.GodotApp");
+            wrapper.Call("hideBootCoverFromGame");
         }
-        catch
+        catch (Exception exception)
         {
+            PatchHelper.Log($"Boot cover hide bridge failed: {exception.Message}");
         }
     }
 

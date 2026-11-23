@@ -48,9 +48,14 @@ public static class IdleFrameRatePatches
         }
     }
 
-    public static void InputPrefix()
+    private static string _lastInputType = "";
+    private static ulong _nextDiagMs;
+    private static int _diagCount;
+
+    public static void InputPrefix(InputEvent @event)
     {
         _lastInputMs = Time.GetTicksMsec();
+        _lastInputType = @event?.GetType().Name ?? "";
         if (_capped)
             Restore();
     }
@@ -59,6 +64,13 @@ public static class IdleFrameRatePatches
     {
         try
         {
+            var now = Time.GetTicksMsec();
+            if (_diagCount < 12 && now >= _nextDiagMs)
+            {
+                _nextDiagMs = now + 10000;
+                _diagCount++;
+                PatchHelper.Log($"[IdleFps] enabled={Enabled} capped={_capped} maxFps={Engine.MaxFps} full={_fullFps} sinceInput={now - _lastInputMs}ms lastInput={_lastInputType} fps={Engine.GetFramesPerSecond():0}");
+            }
             if (!_capped)
             {
                 _fullFps = Engine.MaxFps;

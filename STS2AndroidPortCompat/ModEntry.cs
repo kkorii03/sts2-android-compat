@@ -142,6 +142,7 @@ public static class ModEntry
             MobileHoverReleasePatches.Apply(_harmony);
             MobileTouchTargetPatches.Apply(_harmony);
             MobileCombatHudPatches.Apply(_harmony);
+            CardAdvisorBridge.Apply(_harmony);
             ExtendedMultiplayerRoomPatches.Apply(_harmony);
             IntentAnimationPatches.Apply(_harmony);
             CombatAnimationWarmupPatches.Apply(_harmony);

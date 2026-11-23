@@ -61,6 +61,8 @@ public static class CardAdvisorBridge
         internal static readonly PropertyInfo ExtraHoverTipsProperty = AccessTools.Property(typeof(CardModel), "ExtraHoverTips");
         internal static readonly FieldInfo LocFallbackField = AccessTools.Field(typeof(LocTable), "_fallback");
 
+        internal static readonly System.Text.RegularExpressions.Regex BbCode = new(@"\[/?[^\]]*\]");
+
         internal static readonly JsonWriterOptions WriterOptions = new JsonWriterOptions
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -480,6 +482,9 @@ public static class CardAdvisorBridge
     private static void WriteCardFacts(Utf8JsonWriter writer, CardModel card)
     {
         TryWrite(() => WriteString(writer, "nameKo", card.TitleLocString.GetFormattedText()));
+        // Rules text in the game language, BBCode/icons stripped: lets the advisor's AI judge
+        // what the card actually does instead of guessing from its name.
+        TryWrite(() => WriteString(writer, "desc", PlainText(card.GetDescriptionForPile(PileType.None))));
         TryWrite(() => writer.WriteString("rarity", card.Rarity.ToString()));
         TryWrite(() => writer.WriteString("type", card.Type.ToString()));
         TryWrite(() =>
@@ -505,6 +510,16 @@ public static class CardAdvisorBridge
         {
         }
         writer.WriteEndArray();
+    }
+
+    private static string PlainText(string bbcode)
+    {
+        if (string.IsNullOrEmpty(bbcode))
+            return null;
+        var text = Refs.BbCode.Replace(bbcode, "").Replace('\n', ' ').Trim();
+        while (text.Contains("  "))
+            text = text.Replace("  ", " ");
+        return text.Length > 200 ? text.Substring(0, 200) : text;
     }
 
     private static void TryWrite(Action write)

@@ -138,7 +138,8 @@ public static class ModEntry
             MobileHandScrubPatches.Apply(_harmony);
             MobileReactionButtonPatches.Apply(_harmony);
             MobileHandLayoutPatches.Apply(_harmony);
-            MobileTargetingPreviewPatches.Apply(_harmony);
+            // MobileTargetingPreviewPatches (centred card + borrowed arrow) is off: the
+            // player preferred the previous targeting look (2026-11-23).
             MobileHoverReleasePatches.Apply(_harmony);
             MobileCombatHudPatches.Apply(_harmony);
             // Touch pads + card-advisor bridge: installed after the main menu is up.

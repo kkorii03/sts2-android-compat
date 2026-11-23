@@ -376,9 +376,12 @@ public static class CardAdvisorBridge
                 {
                     if (card == null)
                         continue;
+                    // Same facts as a reward option (minus rect/price), so the advisor can judge
+                    // deck synergy without having to have seen each card as a reward first.
                     writer.WriteStartObject();
                     writer.WriteString("id", card.Id.Entry);
                     writer.WriteBoolean("upgraded", card.IsUpgraded);
+                    WriteCardFacts(writer, card);
                     writer.WriteEndObject();
                 }
             }
@@ -413,39 +416,13 @@ public static class CardAdvisorBridge
         writer.WriteNumber("index", index);
         TryWrite(() => writer.WriteString("id", card.Id.Entry));
         TryWrite(() => writer.WriteBoolean("upgraded", card.IsUpgraded));
-        TryWrite(() => WriteString(writer, "nameKo", card.TitleLocString.GetFormattedText()));
         TryWrite(() => WriteString(writer, "nameEn", EnglishTitle(card)));
-        TryWrite(() => writer.WriteString("rarity", card.Rarity.ToString()));
-        TryWrite(() => writer.WriteString("type", card.Type.ToString()));
-        TryWrite(() =>
-        {
-            var cost = card.EnergyCost;
-            writer.WriteNumber("cost", cost.CostsX ? -1 : cost.GetWithModifiers(CostModifiers.None));
-            if (cost.CostsX)
-                writer.WriteBoolean("costX", true);
-        });
-        TryWrite(() =>
-        {
-            var stars = card.CurrentStarCost;
-            if (stars >= 0 || card.HasStarCostX)
-                writer.WriteNumber("starCost", card.HasStarCostX ? -1 : stars);
-        });
         if (offer.Price.HasValue)
         {
             writer.WriteNumber("price", offer.Price.Value);
             writer.WriteBoolean("onSale", offer.OnSale);
         }
-
-        writer.WriteStartArray("tags");
-        try
-        {
-            foreach (var tag in DeriveTags(card))
-                writer.WriteStringValue(tag);
-        }
-        catch
-        {
-        }
-        writer.WriteEndArray();
+        WriteCardFacts(writer, card);
 
         if (TryScreenRect(offer, screenTransform, out var rect))
         {
@@ -461,6 +438,37 @@ public static class CardAdvisorBridge
             writer.WriteNull("rect");
         }
         writer.WriteEndObject();
+    }
+
+    // nameKo, rarity, type, cost (+costX), starCost, tags: shared by reward options and deck cards.
+    private static void WriteCardFacts(Utf8JsonWriter writer, CardModel card)
+    {
+        TryWrite(() => WriteString(writer, "nameKo", card.TitleLocString.GetFormattedText()));
+        TryWrite(() => writer.WriteString("rarity", card.Rarity.ToString()));
+        TryWrite(() => writer.WriteString("type", card.Type.ToString()));
+        TryWrite(() =>
+        {
+            var cost = card.EnergyCost;
+            writer.WriteNumber("cost", cost.CostsX ? -1 : cost.GetWithModifiers(CostModifiers.None));
+            if (cost.CostsX)
+                writer.WriteBoolean("costX", true);
+        });
+        TryWrite(() =>
+        {
+            var stars = card.CurrentStarCost;
+            if (stars >= 0 || card.HasStarCostX)
+                writer.WriteNumber("starCost", card.HasStarCostX ? -1 : stars);
+        });
+        writer.WriteStartArray("tags");
+        try
+        {
+            foreach (var tag in DeriveTags(card))
+                writer.WriteStringValue(tag);
+        }
+        catch
+        {
+        }
+        writer.WriteEndArray();
     }
 
     private static void TryWrite(Action write)

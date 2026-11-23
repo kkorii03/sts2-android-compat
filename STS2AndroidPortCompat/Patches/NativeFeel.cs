@@ -19,6 +19,7 @@ public static class NativeFeel
     public const string DeveloperModeKey = "android_developer_mode";
     private const string FastModeDefaultKey = "mobile_fast_mode_default_applied";
     private const string HighRefreshDefaultKey = "mobile_120hz_default_applied";
+    private const string RenderDefaultKey = "mobile_render_fhd_default_applied";
 
     public static bool IsAndroid => OS.GetName().Equals("Android", StringComparison.OrdinalIgnoreCase);
 
@@ -116,6 +117,21 @@ public static class NativeFeel
                 && Engine.MaxFps != 120)
             {
                 Engine.MaxFps = 120;
+            }
+
+            // Heat (user report): native QHD+ 3120x1440 is 4.5 MP per frame. Once, move an
+            // untouched "native" render size to the 1920x1080 preset, which on a 19.5:9 phone
+            // renders FHD+ (2340x1080, -44% pixels; the phone's own default). The Mobile tab's
+            // "Render resolution" still offers native.
+            if (!AndroidSettingsBridge.GetBool(RenderDefaultKey, false))
+            {
+                var current = AndroidSettingsBridge.GetSize("fullscreen_render_size");
+                if (current.X <= 0 || current.Y <= 0)
+                {
+                    AndroidSettingsBridge.SetSize("fullscreen_render_size", 1920, 1080);
+                    DisplaySettingsPatches.ApplyRuntimeDisplaySettings();
+                }
+                AndroidSettingsBridge.SetBool(RenderDefaultKey, true);
             }
         }
         catch (Exception exception)

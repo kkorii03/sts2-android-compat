@@ -45,18 +45,25 @@ public static class CardAdvisorBridge
     private const float RewardCardSpacing = 350f;
     private const float ShopOpenY = 80f;
 
-    private static readonly FieldInfo RewardOptionsField = AccessTools.Field(typeof(NCardRewardSelectionScreen), "_options");
-    private static readonly FieldInfo RewardCardRowField = AccessTools.Field(typeof(NCardRewardSelectionScreen), "_cardRow");
-    private static readonly FieldInfo ShopSlotsContainerField = AccessTools.Field(typeof(NMerchantInventory), "_slotsContainer");
-    private static readonly MethodInfo ShopCardSlotsMethod = AccessTools.Method(typeof(NMerchantInventory), "GetCardSlots");
-    private static readonly PropertyInfo ExtraHoverTipsProperty = AccessTools.Property(typeof(CardModel), "ExtraHoverTips");
-    private static readonly FieldInfo LocFallbackField = AccessTools.Field(typeof(LocTable), "_fallback");
-
-    private static readonly JsonWriterOptions WriterOptions = new JsonWriterOptions
+    // Resolved on first use (a reward/shop screen in a run), never during the startup
+    // patch pass: early type/static initialisation there can abort Godot 4.5 on Android
+    // ("Unreferenced static string to 0: _recognize_path"). This class has no static
+    // initialisers on purpose.
+    private static class Refs
     {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        Indented = false,
-    };
+        internal static readonly FieldInfo RewardOptionsField = AccessTools.Field(typeof(NCardRewardSelectionScreen), "_options");
+        internal static readonly FieldInfo RewardCardRowField = AccessTools.Field(typeof(NCardRewardSelectionScreen), "_cardRow");
+        internal static readonly FieldInfo ShopSlotsContainerField = AccessTools.Field(typeof(NMerchantInventory), "_slotsContainer");
+        internal static readonly MethodInfo ShopCardSlotsMethod = AccessTools.Method(typeof(NMerchantInventory), "GetCardSlots");
+        internal static readonly PropertyInfo ExtraHoverTipsProperty = AccessTools.Property(typeof(CardModel), "ExtraHoverTips");
+        internal static readonly FieldInfo LocFallbackField = AccessTools.Field(typeof(LocTable), "_fallback");
+
+        internal static readonly JsonWriterOptions WriterOptions = new JsonWriterOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            Indented = false,
+        };
+    }
 
     private static int _rewardGeneration;
     private static bool _rewardOpen;
@@ -139,8 +146,8 @@ public static class CardAdvisorBridge
             if (generation != _rewardGeneration || !Enabled || !GodotObject.IsInstanceValid(screen)
                 || !screen.IsInsideTree() || !screen.IsVisibleInTree())
                 return;
-            var options = RewardOptionsField?.GetValue(screen) as IReadOnlyList<CardCreationResult>;
-            var cardRow = RewardCardRowField?.GetValue(screen) as Control;
+            var options = Refs.RewardOptionsField?.GetValue(screen) as IReadOnlyList<CardCreationResult>;
+            var cardRow = Refs.RewardCardRowField?.GetValue(screen) as Control;
             if (options == null || options.Count == 0)
                 return;
 
@@ -229,11 +236,11 @@ public static class CardAdvisorBridge
             if (generation != _shopGeneration || !Enabled || !GodotObject.IsInstanceValid(inventory)
                 || !inventory.IsInsideTree() || !inventory.IsOpen)
                 return;
-            if (ShopCardSlotsMethod?.Invoke(inventory, null) is not IEnumerable slots)
+            if (Refs.ShopCardSlotsMethod?.Invoke(inventory, null) is not IEnumerable slots)
                 return;
 
             Vector2? canvasShift = null;
-            if (predictSlots && ShopSlotsContainerField?.GetValue(inventory) is Control container
+            if (predictSlots && Refs.ShopSlotsContainerField?.GetValue(inventory) is Control container
                 && container.GetParent() is CanvasItem containerParent)
             {
                 // The shelf slides down to y = 80 when the inventory opens.
@@ -285,7 +292,7 @@ public static class CardAdvisorBridge
     private static void SendClosed(string eventName)
     {
         var buffer = new ArrayBufferWriter<byte>(128);
-        using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
+        using (var writer = new Utf8JsonWriter(buffer, Refs.WriterOptions))
         {
             writer.WriteStartObject();
             writer.WriteNumber("v", 1);
@@ -300,7 +307,7 @@ public static class CardAdvisorBridge
     {
         var watch = Stopwatch.StartNew();
         var buffer = new ArrayBufferWriter<byte>(4096);
-        using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
+        using (var writer = new Utf8JsonWriter(buffer, Refs.WriterOptions))
         {
             writer.WriteStartObject();
             writer.WriteNumber("v", 1);
@@ -552,7 +559,7 @@ public static class CardAdvisorBridge
         if (table == null)
             return null;
         if (!string.Equals(manager.Language, "eng", StringComparison.OrdinalIgnoreCase))
-            table = LocFallbackField?.GetValue(table) as LocTable;
+            table = Refs.LocFallbackField?.GetValue(table) as LocTable;
         if (table == null)
             return null;
         try
@@ -613,7 +620,7 @@ public static class CardAdvisorBridge
         var generatesCards = false;
         try
         {
-            if (ExtraHoverTipsProperty?.GetValue(card) is IEnumerable<IHoverTip> tips)
+            if (Refs.ExtraHoverTipsProperty?.GetValue(card) is IEnumerable<IHoverTip> tips)
             {
                 foreach (var tip in tips)
                 {

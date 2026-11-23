@@ -140,9 +140,9 @@ public static class ModEntry
             MobileHandLayoutPatches.Apply(_harmony);
             MobileTargetingPreviewPatches.Apply(_harmony);
             MobileHoverReleasePatches.Apply(_harmony);
-            MobileTouchTargetPatches.Apply(_harmony);
             MobileCombatHudPatches.Apply(_harmony);
-            CardAdvisorBridge.Apply(_harmony);
+            // Touch pads + card-advisor bridge: installed after the main menu is up.
+            LateFeaturePatches.Apply(_harmony);
             ExtendedMultiplayerRoomPatches.Apply(_harmony);
             IntentAnimationPatches.Apply(_harmony);
             CombatAnimationWarmupPatches.Apply(_harmony);

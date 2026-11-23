@@ -43,6 +43,7 @@ public static class CardAdvisorBridge
     private const double RewardSettleSeconds = 0.6;
     private const double ShopSettleSeconds = 0.8;
     private const float RewardCardSpacing = 350f;
+    private const float ChooseCardSpacing = 340f;
     private const float ShopOpenY = 80f;
 
     // Resolved on first use (a reward/shop screen in a run), never during the startup
@@ -53,6 +54,8 @@ public static class CardAdvisorBridge
     {
         internal static readonly FieldInfo RewardOptionsField = AccessTools.Field(typeof(NCardRewardSelectionScreen), "_options");
         internal static readonly FieldInfo RewardCardRowField = AccessTools.Field(typeof(NCardRewardSelectionScreen), "_cardRow");
+        internal static readonly FieldInfo ChooseCardsField = AccessTools.Field(typeof(NChooseACardSelectionScreen), "_cards");
+        internal static readonly FieldInfo ChooseCardRowField = AccessTools.Field(typeof(NChooseACardSelectionScreen), "_cardRow");
         internal static readonly FieldInfo ShopSlotsContainerField = AccessTools.Field(typeof(NMerchantInventory), "_slotsContainer");
         internal static readonly MethodInfo ShopCardSlotsMethod = AccessTools.Method(typeof(NMerchantInventory), "GetCardSlots");
         internal static readonly PropertyInfo ExtraHoverTipsProperty = AccessTools.Property(typeof(CardModel), "ExtraHoverTips");
@@ -89,6 +92,15 @@ public static class CardAdvisorBridge
             PatchHelper.Patch(harmony, reward, nameof(NCardRewardSelectionScreen.AfterOverlayClosed), prefix: PatchHelper.Method(self, nameof(RewardGonePostfix)));
             PatchHelper.Patch(harmony, reward, "_ExitTree", prefix: PatchHelper.Method(self, nameof(RewardGonePostfix)));
 
+            // "Choose a card" screen (Neow's starting card pick, events, some card effects): same
+            // row of cards, reported as a card_reward too.
+            var choose = typeof(NChooseACardSelectionScreen);
+            PatchHelper.Patch(harmony, choose, nameof(NChooseACardSelectionScreen.AfterOverlayOpened), postfix: PatchHelper.Method(self, nameof(RewardShownPostfix)));
+            PatchHelper.Patch(harmony, choose, nameof(NChooseACardSelectionScreen.AfterOverlayShown), postfix: PatchHelper.Method(self, nameof(RewardShownPostfix)));
+            PatchHelper.Patch(harmony, choose, nameof(NChooseACardSelectionScreen.AfterOverlayHidden), postfix: PatchHelper.Method(self, nameof(RewardGonePostfix)));
+            PatchHelper.Patch(harmony, choose, nameof(NChooseACardSelectionScreen.AfterOverlayClosed), prefix: PatchHelper.Method(self, nameof(RewardGonePostfix)));
+            PatchHelper.Patch(harmony, choose, "_ExitTree", prefix: PatchHelper.Method(self, nameof(RewardGonePostfix)));
+
             var shop = typeof(NMerchantInventory);
             PatchHelper.Patch(harmony, shop, nameof(NMerchantInventory.Open), postfix: PatchHelper.Method(self, nameof(ShopOpenPostfix)));
             PatchHelper.Patch(harmony, shop, "OnPurchaseCompleted", postfix: PatchHelper.Method(self, nameof(ShopChangedPostfix)));
@@ -103,7 +115,7 @@ public static class CardAdvisorBridge
 
     // ---- card reward -------------------------------------------------------------------
 
-    public static void RewardShownPostfix(NCardRewardSelectionScreen __instance)
+    public static void RewardShownPostfix(Control __instance)
     {
         try
         {
@@ -139,16 +151,14 @@ public static class CardAdvisorBridge
         }
     }
 
-    private static void SendRewardIfCurrent(NCardRewardSelectionScreen screen, int generation, bool predictSlots)
+    private static void SendRewardIfCurrent(Control screen, int generation, bool predictSlots)
     {
         try
         {
             if (generation != _rewardGeneration || !Enabled || !GodotObject.IsInstanceValid(screen)
                 || !screen.IsInsideTree() || !screen.IsVisibleInTree())
                 return;
-            var options = Refs.RewardOptionsField?.GetValue(screen) as IReadOnlyList<CardCreationResult>;
-            var cardRow = Refs.RewardCardRowField?.GetValue(screen) as Control;
-            if (options == null || options.Count == 0)
+            if (!TryGetChoice(screen, out var options, out var cardRow, out var spacing) || options.Count == 0)
                 return;
 
             var holders = new List<NCardHolder>();
@@ -164,15 +174,15 @@ public static class CardAdvisorBridge
             var offers = new List<Offer>(options.Count);
             for (var i = 0; i < options.Count; i++)
             {
-                var card = options[i]?.Card;
+                var card = options[i];
                 if (card == null)
                     continue;
                 var holder = holders.FirstOrDefault(h => h.CardModel == card);
                 Vector2? canvasShift = null;
                 if (predictSlots && holder != null && cardRow != null)
                 {
-                    // Where RefreshOptions sends this holder: slots 350 px apart around x = 0.
-                    var target = new Vector2((i - (options.Count - 1) * 0.5f) * RewardCardSpacing, 0f);
+                    // Where the screen sends this holder: slots `spacing` px apart around x = 0.
+                    var target = new Vector2((i - (options.Count - 1) * 0.5f) * spacing, 0f);
                     canvasShift = cardRow.GetGlobalTransformWithCanvas().BasisXform(target - holder.Position);
                 }
                 offers.Add(new Offer(card, holder?.Hitbox, canvasShift, null, false));
@@ -185,6 +195,32 @@ public static class CardAdvisorBridge
         {
             PatchHelper.Log($"[CardAdvisor] reward send failed: {exception.Message}");
         }
+    }
+
+    // Offered cards, their row and slot spacing for the reward screen or the "choose a card" screen.
+    private static bool TryGetChoice(Control screen, out List<CardModel> cards, out Control cardRow, out float spacing)
+    {
+        cards = null;
+        cardRow = null;
+        spacing = RewardCardSpacing;
+        if (screen is NCardRewardSelectionScreen)
+        {
+            if (Refs.RewardOptionsField?.GetValue(screen) is not IReadOnlyList<CardCreationResult> options)
+                return false;
+            cards = options.Select(o => o?.Card).ToList();
+            cardRow = Refs.RewardCardRowField?.GetValue(screen) as Control;
+            return true;
+        }
+        if (screen is NChooseACardSelectionScreen)
+        {
+            if (Refs.ChooseCardsField?.GetValue(screen) is not IReadOnlyList<CardModel> list)
+                return false;
+            cards = list.ToList();
+            cardRow = Refs.ChooseCardRowField?.GetValue(screen) as Control;
+            spacing = ChooseCardSpacing;
+            return true;
+        }
+        return false;
     }
 
     // ---- merchant ----------------------------------------------------------------------

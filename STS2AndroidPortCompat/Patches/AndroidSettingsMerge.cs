@@ -87,6 +87,7 @@ public static class AndroidSettingsMerge
         "mobile_fast_mode_default_applied",
         "mobile_120hz_default_applied",
         "card_advisor_bridge",
+        "mobile_idle_fps_saver",
     };
 
     public static void MergeBackAndroidOnlyFields(string beforeJson)

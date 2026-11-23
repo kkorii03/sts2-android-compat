@@ -22,6 +22,8 @@ public static class IdleFrameRatePatches
     private static bool _capped;
     private static int _fullFps;
     private static bool _hooked;
+    private static SceneTree _tree;
+    private static Vector2 _lastMousePos;
     private static int _enabled; // 0 unknown, 1 on, 2 off (read once per session)
 
     public static void Apply(Harmony harmony)
@@ -33,6 +35,7 @@ public static class IdleFrameRatePatches
         var tree = Engine.GetMainLoop() as SceneTree;
         if (tree != null && !_hooked)
         {
+            _tree = tree;
             tree.Connect(SceneTree.SignalName.ProcessFrame, Callable.From(OnFrame));
             _hooked = true;
         }
@@ -65,7 +68,22 @@ public static class IdleFrameRatePatches
         try
         {
             var now = Time.GetTicksMsec();
-            if (_diagCount < 12 && now >= _nextDiagMs)
+            // NGame._Input does not see every touch (other handlers consume it first), so also
+            // poll the emulated mouse: any press or pointer movement counts as input.
+            var root = _tree?.Root;
+            if (root != null)
+            {
+                var pos = root.GetMousePosition();
+                if (Input.IsMouseButtonPressed(MouseButton.Left) || pos != _lastMousePos)
+                {
+                    _lastMousePos = pos;
+                    _lastInputMs = now;
+                    _lastInputType = "poll";
+                    if (_capped)
+                        Restore();
+                }
+            }
+            if (_diagCount < 6 && now >= _nextDiagMs)
             {
                 _nextDiagMs = now + 10000;
                 _diagCount++;

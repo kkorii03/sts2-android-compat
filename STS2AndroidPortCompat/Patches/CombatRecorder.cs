@@ -358,6 +358,10 @@ public static class CombatRecorder
             }
             if (power is SkittishPower skittish)
                 w.WriteBoolean("triggered", skittish.HasGainedBlockThisTurn); // already took its block this turn
+            if (power is SurroundedPower surrounded)
+                w.WriteString("facing", surrounded.Facing.ToString()); // which way the player faces on screen
+            if (power is TheBombPower or ToricToughnessPower) // the number its text shows
+                try { w.WriteNumber("value", power is TheBombPower ? power.DynamicVars.Damage.IntValue : power.DynamicVars.Block.IntValue); } catch { }
             if (power.SkipNextDurationTick)
                 w.WriteBoolean("skipTick", true);
             w.WriteEndObject();

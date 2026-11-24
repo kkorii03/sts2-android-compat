@@ -260,7 +260,7 @@ public static class AndroidInGameSettingsPatches
             DisplaySettingsPatches.ApplyRuntimeDisplaySettings();
         });
         AddSwitchRow(content, CombatStateBridge.SettingKey, "전투 조언자 앱에 상황 보내기", true, enabled => { if (!enabled) CombatStateBridge.HidePrefix(); });
-        AddButtonRow(content, "전투 기록", "보내기", CombatRecorder.Share);
+        AddButtonRow(content, "전투 기록 (다운로드 폴더)", "저장", CombatRecorder.Share);
         AddButtonRow(content, "지금 상황 표시 (전투 중)", "표시", () => CombatRecorder.Mark());
 
         if (!NativeFeel.ShowPortUi)

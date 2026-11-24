@@ -229,7 +229,10 @@ public static class CombatRecorder
         if (card.Affliction != null)
             w.WriteString("affliction", card.Affliction.Id.Entry);
         if (card.Enchantment != null)
+        {
             w.WriteString("enchantment", card.Enchantment.Id.Entry);
+            w.WriteNumber("enchantmentAmount", card.Enchantment.Amount);
+        }
         if (card.Keywords.Count > 0)
         {
             w.WriteStartArray("keywords");
@@ -326,7 +329,7 @@ public static class CombatRecorder
                     stream.Write(item.Line, 0, item.Line.Length);
                     stream.WriteByte((byte)'\n');
                 }
-                foreach (var old in new DirectoryInfo(Folder).GetFiles("*.jsonl").OrderByDescending(f => f.Name, StringComparer.Ordinal).Skip(KeepFiles))
+                foreach (var old in new DirectoryInfo(Folder).GetFiles("*.jsonl").OrderByDescending(f => f.LastWriteTimeUtc).Skip(KeepFiles))
                     old.Delete();
             }
             catch (Exception exception)

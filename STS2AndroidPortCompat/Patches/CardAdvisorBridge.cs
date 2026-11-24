@@ -10,6 +10,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Merchant;
@@ -123,6 +124,8 @@ public static class CardAdvisorBridge
         {
             if (!Enabled || __instance == null)
                 return;
+            if (__instance is NChooseACardSelectionScreen && CombatManager.Instance.IsInProgress)
+                return; // a card effect in combat, not a reward: CombatStateBridge sends it as a choice
             var generation = ++_rewardGeneration;
             var screen = __instance;
             Callable.From(() => SendRewardIfCurrent(screen, generation, predictSlots: true)).CallDeferred();
@@ -515,6 +518,13 @@ public static class CardAdvisorBridge
         TryWrite(() => writer.WriteString("targetType", card.TargetType.ToString()));
         TryWrite(() => { if (card.CurrentStarCost >= 0) writer.WriteNumber("stars", card.CurrentStarCost); });
         TryWrite(() => writer.WriteNumber("up", card.CurrentUpgradeLevel));
+        TryWrite(() =>
+        {
+            if (card.Enchantment == null)
+                return;
+            writer.WriteString("enchantment", card.Enchantment.Id.Entry);
+            writer.WriteNumber("enchantmentAmount", card.Enchantment.Amount);
+        });
         writer.WriteStartArray("keywords");
         try { foreach (var keyword in card.Keywords) writer.WriteStringValue(keyword.ToString()); } catch { }
         writer.WriteEndArray();

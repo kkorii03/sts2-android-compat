@@ -48,11 +48,12 @@ public static class RunAdvisorBridge
         var shop = typeof(NMerchantInventory);
         PatchHelper.Patch(harmony, shop, nameof(NMerchantInventory.Open), postfix: PatchHelper.Method(self, nameof(ShopPostfix)));
         PatchHelper.Patch(harmony, shop, "OnPurchaseCompleted", postfix: PatchHelper.Method(self, nameof(ShopPostfix)));
-        PatchHelper.Patch(harmony, shop, "Close", postfix: PatchHelper.Method(self, nameof(LeavePrefix)));
-        PatchHelper.Patch(harmony, shop, "_ExitTree", prefix: PatchHelper.Method(self, nameof(LeavePrefix)));
+        PatchHelper.Patch(harmony, shop, "Close", postfix: PatchHelper.Method(self, nameof(ShopLeavePrefix)));
+        PatchHelper.Patch(harmony, shop, "_ExitTree", prefix: PatchHelper.Method(self, nameof(ShopLeavePrefix)));
         PatchHelper.Patch(harmony, typeof(RestSiteOption), nameof(RestSiteOption.Generate), postfix: PatchHelper.Method(self, nameof(RestPostfix)));
         PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.AfterSelectingOption), postfix: PatchHelper.Method(self, nameof(LeavePrefix)));
         PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.BeforeExitingRoom), prefix: PatchHelper.Method(self, nameof(LeavePrefix)));
+        PatchHelper.Patch(harmony, typeof(RunManager), nameof(RunManager.CleanUp), prefix: PatchHelper.Method(self, nameof(LeavePrefix))); // save and quit, abandon
         PatchHelper.Patch(harmony, typeof(NDeckUpgradeSelectScreen), nameof(NDeckUpgradeSelectScreen.ShowScreen), postfix: PatchHelper.Method(self, nameof(UpgradePostfix)));
         var removal = AccessTools.Method(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForRemoval));
         if (removal != null)
@@ -63,6 +64,7 @@ public static class RunAdvisorBridge
 
     private static Action _again; // the shop / rest site advice, sent again when a deck screen opened from it closes
     private static bool _gridOpen;
+    private static bool _shopOpen; // the old shop node leaves the tree after the next room has made its options
 
     public static void GridGonePrefix()
     {
@@ -89,8 +91,10 @@ public static class RunAdvisorBridge
         {
             if (!Enabled || player == null)
                 return;
-            ++_generation;
             var list = player.Deck.Cards.Where(c => c.IsRemovable && (filter == null || filter(c))).ToList();
+            if (list.Count == 0 || !prefs.RequireManualConfirmation && list.Count <= prefs.MinSelect)
+                return; // the game takes them without a screen
+            ++_generation;
             Send("remove_select", w =>
             {
                 w.WriteNumber("pick", prefs.MaxSelect);
@@ -120,6 +124,7 @@ public static class RunAdvisorBridge
             if (!Enabled || __instance == null)
                 return;
             var generation = ++_generation;
+            _shopOpen = true;
             var node = __instance;
             Later(node, ShopSettleSeconds, generation, _again = () =>
             {
@@ -186,6 +191,7 @@ public static class RunAdvisorBridge
             if (!Enabled || __result == null || player == null)
                 return;
             var generation = ++_generation;
+            _shopOpen = false; // this room is the current one now
             var options = __result.ToList();
             Later(null, RestSettleSeconds, generation, _again = () => Send("rest_site", w =>
             {
@@ -273,8 +279,15 @@ public static class RunAdvisorBridge
         }
     }
 
+    public static void ShopLeavePrefix()
+    {
+        if (_shopOpen)
+            LeavePrefix();
+    }
+
     public static void LeavePrefix()
     {
+        _shopOpen = false;
         _again = null;
         GonePrefix();
     }

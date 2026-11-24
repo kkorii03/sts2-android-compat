@@ -13,6 +13,7 @@ using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Hooks;
+using MegaCrit.Sts2.Core.Runs;
 using STS2Mobile.Android;
 
 namespace STS2Mobile.Patches;
@@ -29,7 +30,6 @@ public static class CombatStateBridge
 
     private static GodotObject _java;
     private static int _generation;
-    private static bool _failed;
 
     public static void Apply(Harmony harmony)
     {
@@ -37,10 +37,15 @@ public static class CombatStateBridge
             return;
         var self = typeof(CombatStateBridge);
         PatchHelper.Patch(harmony, typeof(Hook), nameof(Hook.AfterPlayerTurnStart), prefix: PatchHelper.Method(self, nameof(RefreshPrefix)));
+        // After the turn-start card choices (Tyranny and the like), which cancel the state above.
+        PatchHelper.Patch(harmony, typeof(Hook), nameof(Hook.AfterAutoPrePlayPhaseEntered), prefix: PatchHelper.Method(self, nameof(RefreshPrefix)));
         PatchHelper.Patch(harmony, typeof(Hook), nameof(Hook.AfterCardPlayed), prefix: PatchHelper.Method(self, nameof(RefreshPrefix)));
         PatchHelper.Patch(harmony, typeof(Hook), nameof(Hook.AfterPotionUsed), prefix: PatchHelper.Method(self, nameof(RefreshPrefix)));
         PatchHelper.Patch(harmony, typeof(Hook), nameof(Hook.BeforeSideTurnEnd), prefix: PatchHelper.Method(self, nameof(HidePrefix)));
         PatchHelper.Patch(harmony, typeof(Hook), nameof(Hook.AfterCombatEnd), prefix: PatchHelper.Method(self, nameof(HidePrefix)));
+        // No AfterCombatEnd on death, save and quit, or abandon.
+        PatchHelper.Patch(harmony, typeof(CombatManager), nameof(CombatManager.LoseCombat), prefix: PatchHelper.Method(self, nameof(HidePrefix)));
+        PatchHelper.Patch(harmony, typeof(RunManager), nameof(RunManager.CleanUp), prefix: PatchHelper.Method(self, nameof(HidePrefix)));
         // "Choose N cards" during combat: what may be chosen, so the separate app can advise.
         Select(harmony, "FromCombatPile", nameof(PilePrefix), typeof(PlayerChoiceContext), typeof(CardPile), typeof(Player), typeof(CardSelectorPrefs), typeof(Func<CardModel, bool>));
         Select(harmony, "FromSimpleGrid", nameof(GridPrefix), typeof(PlayerChoiceContext), typeof(IReadOnlyList<CardModel>), typeof(Player), typeof(CardSelectorPrefs));
@@ -75,7 +80,7 @@ public static class CombatStateBridge
         try
         {
             var combat = player?.Creature?.CombatState;
-            if (_failed || combat == null || !AndroidSettingsBridge.GetBool(SettingKey, true))
+            if (combat == null || !AndroidSettingsBridge.GetBool(SettingKey, true))
                 return;
             var list = cards.OrderBy(c => c.Id.Entry, StringComparer.Ordinal).ToList(); // never the real pile order
             var min = prefs?.MinSelect ?? (canSkip ? 0 : 1);
@@ -120,7 +125,7 @@ public static class CombatStateBridge
     {
         try
         {
-            if (_failed || combatState == null || !AndroidSettingsBridge.GetBool(SettingKey, true))
+            if (combatState == null || !AndroidSettingsBridge.GetBool(SettingKey, true))
                 return;
             var generation = ++_generation;
             // Wait for the play to finish moving cards, then send the latest state once.
@@ -131,6 +136,10 @@ public static class CombatStateBridge
                         return;
                     try
                     {
+                        // Potions also work after the fight and in the enemy turn: nothing to advise then.
+                        var phase = combatState.Players.FirstOrDefault()?.PlayerCombatState?.Phase;
+                        if (!CombatManager.Instance.IsInProgress || phase is null or PlayerTurnPhase.None or PlayerTurnPhase.End)
+                            return;
                         var snapshot = CombatRecorder.Snapshot("combat", combatState, null, null);
                         if (snapshot != null)
                             Deliver(Encoding.UTF8.GetString(snapshot));
@@ -152,8 +161,7 @@ public static class CombatStateBridge
         try
         {
             _generation++;
-            if (!_failed)
-                Deliver("{\"event\":\"hide\"}");
+            Deliver("{\"event\":\"hide\"}");
         }
         catch (Exception exception)
         {
@@ -170,7 +178,6 @@ public static class CombatStateBridge
 
     private static void Fail(Exception exception)
     {
-        _failed = true; // this session only; the game goes on
-        PatchHelper.Log($"[CombatBridge] stopped: {exception}");
+        PatchHelper.Log($"[CombatBridge] failed: {exception.Message}"); // the game goes on; the next state is tried again
     }
 }

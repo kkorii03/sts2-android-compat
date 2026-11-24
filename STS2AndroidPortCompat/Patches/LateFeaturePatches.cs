@@ -46,6 +46,7 @@ public static class LateFeaturePatches
         Run("Idle frame rate saver", () => IdleFrameRatePatches.Apply(_harmony));
         Run("Combat recorder", () => CombatRecorder.Apply(_harmony));
         Run("Combat state bridge", () => CombatStateBridge.Apply(_harmony));
+        Run("Run advisor bridge", () => RunAdvisorBridge.Apply(_harmony));
     }
 
     private static void Run(string label, Action apply)

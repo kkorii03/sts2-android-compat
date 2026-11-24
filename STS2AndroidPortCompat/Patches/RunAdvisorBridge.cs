@@ -1,0 +1,376 @@
+using System;
+using System.Buffers;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using Godot;
+using HarmonyLib;
+using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Entities.Merchant;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Entities.RestSite;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Nodes.Rooms;
+using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
+using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
+using MegaCrit.Sts2.Core.Runs;
+using STS2Mobile.Android;
+
+namespace STS2Mobile.Patches;
+
+/// <summary>
+/// Out-of-combat screens for the separate personal combat app (com.kkorii.sts2combat): the whole
+/// merchant (cards, relics, potions, card removal), the rest site options, and the deck upgrade
+/// screen with each card's upgraded numbers. Only what the player can see on screen; nothing is
+/// shown or changed in the game. Same setting as the combat bridge (combat_state_bridge).
+/// Every hook only observes and never throws into the game.
+/// </summary>
+public static class RunAdvisorBridge
+{
+    private const double ShopSettleSeconds = 0.9;
+    private const double RestSettleSeconds = 0.8;
+    private static int _generation;
+    private static bool _shown;
+    private static GodotObject _java;
+    private static bool _failed;
+
+    private static bool Enabled => !_failed && NativeFeel.IsAndroid && AndroidSettingsBridge.GetBool(CombatStateBridge.SettingKey, true);
+
+    public static void Apply(Harmony harmony)
+    {
+        if (!NativeFeel.IsAndroid)
+            return;
+        var self = typeof(RunAdvisorBridge);
+        var shop = typeof(NMerchantInventory);
+        PatchHelper.Patch(harmony, shop, nameof(NMerchantInventory.Open), postfix: PatchHelper.Method(self, nameof(ShopPostfix)));
+        PatchHelper.Patch(harmony, shop, "OnPurchaseCompleted", postfix: PatchHelper.Method(self, nameof(ShopPostfix)));
+        PatchHelper.Patch(harmony, shop, "Close", postfix: PatchHelper.Method(self, nameof(GonePrefix)));
+        PatchHelper.Patch(harmony, shop, "_ExitTree", prefix: PatchHelper.Method(self, nameof(GonePrefix)));
+        PatchHelper.Patch(harmony, typeof(RestSiteOption), nameof(RestSiteOption.Generate), postfix: PatchHelper.Method(self, nameof(RestPostfix)));
+        PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.AfterSelectingOption), postfix: PatchHelper.Method(self, nameof(GonePrefix)));
+        PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.BeforeExitingRoom), prefix: PatchHelper.Method(self, nameof(GonePrefix)));
+        PatchHelper.Patch(harmony, typeof(NDeckUpgradeSelectScreen), nameof(NDeckUpgradeSelectScreen.ShowScreen), postfix: PatchHelper.Method(self, nameof(UpgradePostfix)));
+        // _ExitTree is declared on the shared grid screen: only the deck upgrade screen counts.
+        PatchHelper.Patch(harmony, typeof(NCardGridSelectionScreen), "_ExitTree", prefix: PatchHelper.Method(self, nameof(GridGonePrefix)));
+    }
+
+    private static Action _restAgain; // the rest site advice, sent again when the upgrade screen is cancelled
+
+    public static void GridGonePrefix(NCardGridSelectionScreen __instance)
+    {
+        if (__instance is not NDeckUpgradeSelectScreen)
+            return;
+        GonePrefix();
+        try
+        {
+            if (_restAgain != null && NRestSiteRoom.Instance != null && GodotObject.IsInstanceValid(NRestSiteRoom.Instance))
+                Later(null, RestSettleSeconds, ++_generation, _restAgain);
+        }
+        catch (Exception exception)
+        {
+            Fail("rest again", exception);
+        }
+    }
+
+    // ---- merchant ----------------------------------------------------------------------
+
+    public static void ShopPostfix(NMerchantInventory __instance)
+    {
+        try
+        {
+            if (!Enabled || __instance == null)
+                return;
+            var generation = ++_generation;
+            var node = __instance;
+            Later(node, ShopSettleSeconds, generation, () =>
+            {
+                if (!GodotObject.IsInstanceValid(node) || !node.IsOpen || node.Inventory == null)
+                    return;
+                Send("shop", w => Shop(w, node.Inventory));
+            });
+        }
+        catch (Exception exception)
+        {
+            Fail("shop", exception);
+        }
+    }
+
+    private static void Shop(Utf8JsonWriter w, MerchantInventory inventory)
+    {
+        w.WriteStartArray("shopCards");
+        foreach (var entry in inventory.CardEntries)
+        {
+            var card = entry.CreationResult?.Card;
+            if (!entry.IsStocked || card == null)
+                continue;
+            w.WriteStartObject();
+            CardFacts(w, card);
+            w.WriteNumber("price", entry.Cost);
+            w.WriteBoolean("onSale", entry.IsOnSale);
+            w.WriteBoolean("colorless", inventory.ColorlessCardEntries.Contains(entry));
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+        w.WriteStartArray("shopRelics");
+        foreach (var entry in inventory.RelicEntries)
+        {
+            if (!entry.IsStocked || entry.Model == null)
+                continue;
+            w.WriteStartObject();
+            Relic(w, entry.Model);
+            w.WriteNumber("price", entry.Cost);
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+        w.WriteStartArray("shopPotions");
+        foreach (var entry in inventory.PotionEntries)
+        {
+            if (!entry.IsStocked || entry.Model == null)
+                continue;
+            w.WriteStartObject();
+            Potion(w, entry.Model);
+            w.WriteNumber("price", entry.Cost);
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+        var removal = inventory.CardRemovalEntry;
+        if (removal != null && removal.IsStocked)
+            w.WriteNumber("removalPrice", removal.Cost);
+    }
+
+    // ---- rest site ---------------------------------------------------------------------
+
+    public static void RestPostfix(Player player, List<RestSiteOption> __result)
+    {
+        try
+        {
+            if (!Enabled || __result == null || player == null)
+                return;
+            var generation = ++_generation;
+            var options = __result.ToList();
+            Later(null, RestSettleSeconds, generation, _restAgain = () => Send("rest_site", w =>
+            {
+                w.WriteStartArray("restOptions");
+                foreach (var option in options)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("id", option.OptionId);
+                    Try(() => w.WriteString("name", option.Title.GetFormattedText()));
+                    Try(() => w.WriteBoolean("enabled", option.IsEnabled));
+                    if (option is HealRestSiteOption)
+                        Try(() => w.WriteNumber("heal", (int)HealRestSiteOption.GetHealAmount(player)));
+                    if (option is SmithRestSiteOption smith)
+                        Try(() => w.WriteNumber("count", smith.SmithCount));
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+                Upgradable(w, player.Deck.Cards.Where(c => c.IsUpgradable), player.RunState);
+            }));
+        }
+        catch (Exception exception)
+        {
+            Fail("rest", exception);
+        }
+    }
+
+    // ---- deck upgrade screen ------------------------------------------------------------
+
+    public static void UpgradePostfix(IReadOnlyList<CardModel> cards, CardSelectorPrefs prefs, IRunState runState)
+    {
+        try
+        {
+            if (!Enabled || cards == null)
+                return;
+            ++_generation;
+            var list = cards.ToList();
+            var count = prefs.MaxSelect;
+            Send("upgrade_select", w =>
+            {
+                w.WriteNumber("pick", count);
+                Upgradable(w, list, runState);
+            });
+        }
+        catch (Exception exception)
+        {
+            Fail("upgrade", exception);
+        }
+    }
+
+    private static void Upgradable(Utf8JsonWriter w, IEnumerable<CardModel> cards, IRunState runState)
+    {
+        w.WriteStartArray("upgradable");
+        foreach (var card in cards)
+        {
+            w.WriteStartObject();
+            CardFacts(w, card);
+            w.WriteStartObject("upgraded");
+            Upgraded(w, card, runState);
+            w.WriteEndObject();
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+    }
+
+    /// The upgraded numbers, the way the game's own "show upgrades" preview makes them: a clone
+    /// that is upgraded and then removed from the run again.
+    private static void Upgraded(Utf8JsonWriter w, CardModel card, IRunState runState)
+    {
+        CardModel clone = null;
+        try
+        {
+            clone = runState.CloneCard(card);
+            clone.UpgradeInternal();
+            CombatRecorder.Card(w, clone);
+        }
+        catch (Exception exception)
+        {
+            w.WriteString("error", exception.GetType().Name);
+        }
+        finally
+        {
+            if (clone != null)
+                Try(() => runState.RemoveCard(clone));
+        }
+    }
+
+    public static void GonePrefix()
+    {
+        try
+        {
+            _generation++;
+            if (!_shown || !Enabled)
+                return;
+            _shown = false;
+            Deliver("{\"event\":\"hide\"}");
+        }
+        catch (Exception exception)
+        {
+            Fail("hide", exception);
+        }
+    }
+
+    // ---- JSON ---------------------------------------------------------------------------
+
+    private static void Send(string name, Action<Utf8JsonWriter> body)
+    {
+        var state = RunManager.Instance?.DebugOnlyGetState();
+        if (state == null || state.Players.Count != 1)
+            return;
+        Player player = null;
+        try { player = LocalContext.GetMe(state.Players); } catch { }
+        player ??= state.Players[0];
+        var buffer = new ArrayBufferWriter<byte>(8192);
+        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+        {
+            w.WriteStartObject();
+            w.WriteNumber("v", 1);
+            w.WriteString("event", name);
+            w.WriteStartObject("run");
+            Try(() => w.WriteString("character", player.Character.Id.Entry));
+            Try(() => w.WriteNumber("act", state.CurrentActIndex + 1));
+            Try(() => w.WriteNumber("floor", state.TotalFloor));
+            Try(() => w.WriteNumber("ascension", state.AscensionLevel));
+            Try(() => w.WriteNumber("hp", player.Creature.CurrentHp));
+            Try(() => w.WriteNumber("maxHp", player.Creature.MaxHp));
+            Try(() => w.WriteNumber("gold", player.Gold));
+            Try(() => w.WriteNumber("potionSlots", player.MaxPotionCount));
+            w.WriteEndObject();
+            w.WriteStartArray("deck");
+            foreach (var card in player.Deck.Cards)
+            {
+                w.WriteStartObject();
+                CardFacts(w, card);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+            w.WriteStartArray("relics");
+            foreach (var relic in player.Relics)
+            {
+                w.WriteStartObject();
+                Relic(w, relic);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+            w.WriteStartArray("potions");
+            foreach (var potion in player.Potions)
+            {
+                w.WriteStartObject();
+                Potion(w, potion);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+            body(w);
+            w.WriteEndObject();
+        }
+        var json = Encoding.UTF8.GetString(buffer.WrittenSpan);
+        CombatRecorder.AdvisorState(json);
+        Deliver(json);
+        _shown = true;
+        PatchHelper.Log($"[RunAdvisor] {name}: {json.Length} chars");
+    }
+
+    private static void CardFacts(Utf8JsonWriter w, CardModel card)
+    {
+        CombatRecorder.Card(w, card);
+        Try(() => w.WriteString("rarity", card.Rarity.ToString()));
+    }
+
+    private static void Relic(Utf8JsonWriter w, RelicModel relic)
+    {
+        w.WriteString("id", relic.Id.Entry);
+        Try(() => w.WriteString("name", relic.Title.GetFormattedText()));
+        Try(() => w.WriteString("rarity", relic.Rarity.ToString()));
+        Try(() => w.WriteString("desc", Plain(relic.DynamicDescription.GetFormattedText())));
+    }
+
+    private static void Potion(Utf8JsonWriter w, PotionModel potion)
+    {
+        w.WriteString("id", potion.Id.Entry);
+        Try(() => w.WriteString("name", potion.Title.GetFormattedText()));
+        Try(() => w.WriteString("rarity", potion.Rarity.ToString()));
+        Try(() => w.WriteString("desc", Plain(potion.DynamicDescription.GetFormattedText())));
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex BbCode = new(@"\[/?[^\]]*\]");
+
+    private static string Plain(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+        text = BbCode.Replace(text, "").Replace('\n', ' ').Trim();
+        return text.Length > 200 ? text.Substring(0, 200) : text;
+    }
+
+    private static void Later(Node node, double seconds, int generation, Action action)
+    {
+        if (Engine.GetMainLoop() is not SceneTree tree)
+            return;
+        tree.CreateTimer(seconds).Timeout += () =>
+        {
+            if (generation != _generation || !Enabled)
+                return;
+            try { action(); }
+            catch (Exception exception) { Fail("send", exception); }
+        };
+    }
+
+    private static void Try(Action write)
+    {
+        try { write(); } catch { }
+    }
+
+    private static void Deliver(string json)
+    {
+        if (_java == null || !GodotObject.IsInstanceValid(_java))
+            _java = (GodotObject)Engine.GetSingleton("JavaClassWrapper").Call("wrap", "com.godot.game.GodotApp");
+        _java.Call("sendCombatState", json);
+    }
+
+    private static void Fail(string where, Exception exception)
+    {
+        PatchHelper.Log($"[RunAdvisor] {where} failed: {exception.Message}"); // the game goes on; the next screen tries again
+    }
+}

@@ -114,18 +114,37 @@ public static class CombatRecorder
             return;
         try
         {
-            var state = RunManager.Instance?.DebugOnlyGetState();
-            if (combat == null || state == null || state.Players.Count != 1)
+            var line = Snapshot(name, combat, play, potion);
+            if (line == null)
                 return;
-            var player = state.Players[0];
-            var pcs = player.PlayerCombatState;
-            if (pcs == null)
-                return;
+            var state = RunManager.Instance.DebugOnlyGetState();
             if (_file == null)
             {
                 _file = Path.Combine(Folder, $"{DateTime.Now:yyyyMMdd-HHmmss}-a{state.CurrentActIndex + 1}f{state.TotalFloor}.jsonl");
                 _seq = 0;
             }
+            Pending.Enqueue((_file, line));
+            if (Interlocked.Exchange(ref _writing, 1) == 0)
+                Task.Run(Flush);
+        }
+        catch (Exception exception)
+        {
+            _failed = true; // this session only
+            PatchHelper.Log($"[CombatRecorder] stopped at {name}: {exception}");
+        }
+    }
+
+    /// What the player can see right now, as one JSON object; null outside a single-player combat.
+    public static byte[] Snapshot(string name, ICombatState combat, CardPlay play, PotionModel potion)
+    {
+            var state = RunManager.Instance?.DebugOnlyGetState();
+            if (combat == null || state == null || state.Players.Count != 1)
+                return null;
+            var player = state.Players[0];
+            var pcs = player.PlayerCombatState;
+            if (pcs == null)
+                return null;
+            var history = CombatManager.Instance.History;
             var buffer = new ArrayBufferWriter<byte>(8192);
             using (var w = new Utf8JsonWriter(buffer))
             {
@@ -139,6 +158,9 @@ public static class CombatRecorder
                 w.WriteNumber("energy", pcs.Energy);
                 w.WriteNumber("maxEnergy", pcs.MaxEnergy);
                 w.WriteNumber("stars", pcs.Stars);
+                w.WriteNumber("plays", history.CardPlaysStarted.Count(e => e.HappenedThisTurn(combat) && e.CardPlay.Player == player));
+                w.WriteNumber("skills", history.CardPlaysFinished.Count(e => e.HappenedThisTurn(combat) && e.CardPlay.Player == player && e.CardPlay.Card.Type == CardType.Skill));
+                w.WriteNumber("attacks", history.CardPlaysFinished.Count(e => e.HappenedThisTurn(combat) && e.CardPlay.Player == player && e.CardPlay.Card.Type == CardType.Attack));
                 if (play != null)
                 {
                     w.WriteStartObject("play");
@@ -184,20 +206,13 @@ public static class CombatRecorder
                 w.WriteEndArray();
                 w.WriteEndObject();
             }
-            Pending.Enqueue((_file, buffer.WrittenSpan.ToArray()));
-            if (Interlocked.Exchange(ref _writing, 1) == 0)
-                Task.Run(Flush);
-        }
-        catch (Exception exception)
-        {
-            _failed = true; // this session only
-            PatchHelper.Log($"[CombatRecorder] stopped at {name}: {exception}");
-        }
+            return buffer.WrittenSpan.ToArray();
     }
 
     private static void Card(Utf8JsonWriter w, CardModel card)
     {
         w.WriteString("id", card.Id.Entry);
+        w.WriteString("name", card.TitleLocString.GetFormattedText());
         w.WriteString("type", card.Type.ToString());
         w.WriteString("targetType", card.TargetType.ToString());
         w.WriteNumber("up", card.CurrentUpgradeLevel);
@@ -241,6 +256,7 @@ public static class CombatRecorder
         w.WriteStartObject();
         w.WriteString("combatId", creature.CombatId?.ToString());
         w.WriteString("id", creature.ModelId.Entry);
+        w.WriteString("name", creature.Name);
         w.WriteString("side", creature.Side.ToString());
         w.WriteNumber("hp", creature.CurrentHp);
         w.WriteNumber("maxHp", creature.MaxHp);
@@ -267,6 +283,8 @@ public static class CombatRecorder
                 if (intent is AttackIntent attack)
                 {
                     w.WriteNumber("damage", attack.GetSingleDamage(combat.Creatures.Where(c => c.IsPlayer), creature));
+                    if (attack.DamageCalc != null)
+                        w.WriteNumber("base", attack.DamageCalc());
                     w.WriteNumber("repeats", attack.Repeats);
                 }
                 w.WriteEndObject();

@@ -45,6 +45,7 @@ public static class LateFeaturePatches
         Run("Card advisor bridge", () => CardAdvisorBridge.Apply(_harmony));
         Run("Idle frame rate saver", () => IdleFrameRatePatches.Apply(_harmony));
         Run("Combat recorder", () => CombatRecorder.Apply(_harmony));
+        Run("Combat advice", () => CombatAdviceOverlay.Apply(_harmony));
     }
 
     private static void Run(string label, Action apply)

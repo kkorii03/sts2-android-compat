@@ -259,6 +259,8 @@ public static class AndroidInGameSettingsPatches
             AndroidSettingsBridge.SetSize("fullscreen_render_size", enabled ? 0 : 1920, enabled ? 0 : 1080);
             DisplaySettingsPatches.ApplyRuntimeDisplaySettings();
         });
+        if (CombatAdviceOverlay.Available)
+            AddSwitchRow(content, CombatAdviceOverlay.SettingKey, "전투 조언 표시 (시험판)", true, enabled => { if (!enabled) CombatAdviceOverlay.HidePrefix(); });
         AddButtonRow(content, "전투 기록", "보내기", CombatRecorder.Share);
         AddButtonRow(content, "지금 상황 표시 (전투 중)", "표시", () => CombatRecorder.Mark());
 

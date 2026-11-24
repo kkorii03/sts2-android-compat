@@ -89,6 +89,7 @@ public static class AndroidSettingsMerge
         "card_advisor_bridge",
         "mobile_idle_fps_saver",
         "combat_recorder",
+        "combat_advice",
         "mobile_render_fhd_default_applied",
     };
 

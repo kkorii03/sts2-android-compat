@@ -243,6 +243,7 @@ public static class CombatRecorder
         Part(() => w.WriteNumber("exhaustedCombat", all.OfType<CardExhaustedEntry>().Count(e => e.Actor == me)));
         Part(() => w.WriteNumber("ostyAttacks", all.OfType<CreatureAttackedEntry>().Count(e => e.Actor != me && e.Actor != null && !e.Actor.IsPlayer && e.Actor.Side == me.Side && e.HappenedThisTurn(combat))));
         Part(() => w.WriteNumber("playsAll", history.CardPlaysFinished.Count(e => e.CardPlay.Player == player)));
+        Part(() => w.WriteNumber("powers", history.CardPlaysFinished.Count(e => e.CardPlay.Player == player && e.CardPlay.Card.Type == CardType.Power)));
         Part(() => w.WriteNumber("ethPlays", all.OfType<CardPlayFinishedEntry>().Count(e => e.CardPlay.Player == player && e.WasEthereal)));
         Part(() => w.WriteNumber("made", all.OfType<CardGeneratedEntry>().Count(e => e.Creator == player)));
         Part(() => w.WriteNumber("starsGot", all.OfType<StarsModifiedEntry>().Where(e => e.Actor == me && e.Amount > 0 && e.HappenedThisTurn(combat)).Sum(e => e.Amount)));

@@ -46,6 +46,8 @@ public static class CombatStateBridge
         // No AfterCombatEnd on death, save and quit, or abandon.
         PatchHelper.Patch(harmony, typeof(CombatManager), nameof(CombatManager.LoseCombat), prefix: PatchHelper.Method(self, nameof(HidePrefix)));
         PatchHelper.Patch(harmony, typeof(RunManager), nameof(RunManager.CleanUp), prefix: PatchHelper.Method(self, nameof(HidePrefix)));
+        // A box left over from a game that was closed in the middle of a fight.
+        PatchHelper.Patch(harmony, typeof(MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenu), "_Ready", postfix: PatchHelper.Method(self, nameof(HidePrefix)));
         // "Choose N cards" during combat: what may be chosen, so the separate app can advise.
         Select(harmony, "FromCombatPile", nameof(PilePrefix), typeof(PlayerChoiceContext), typeof(CardPile), typeof(Player), typeof(CardSelectorPrefs), typeof(Func<CardModel, bool>));
         Select(harmony, "FromSimpleGrid", nameof(GridPrefix), typeof(PlayerChoiceContext), typeof(IReadOnlyList<CardModel>), typeof(Player), typeof(CardSelectorPrefs));

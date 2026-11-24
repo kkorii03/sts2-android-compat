@@ -261,6 +261,12 @@ public static class RunAdvisorBridge
             w.WriteNumber("row", current.coord.row);
         }
         w.WriteNumber("rows", map.GetRowCount());
+        Try(() => w.WriteString("boss", state.Act.BossEncounter.Id.Entry)); // its icon is on the map
+        w.WriteStartArray("visited");
+        foreach (var coord in state.VisitedMapCoords)
+            if (map.GetPoint(coord) is { } point)
+                w.WriteStringValue(point.PointType.ToString());
+        w.WriteEndArray();
         w.WriteStartArray("next");
         foreach (var point in current == null ? Enumerable.Empty<MapPoint>() : MapTravel.GetTravelablePointsFrom(state, current))
             Coord(w, point);

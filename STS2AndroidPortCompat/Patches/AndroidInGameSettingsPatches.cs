@@ -253,6 +253,14 @@ public static class AndroidInGameSettingsPatches
                 ApplyDisplayRefreshRateMode(mode);
                 SetGameFpsLimit(enabled ? 60 : 120);
             });
+        // The FHD+ default (heat) needs a visible way back: the full list is developer-only.
+        AddToggleRow(content, "최고 해상도 (발열 늘 수 있음)", AndroidSettingsBridge.GetSize("fullscreen_render_size").X <= 0, enabled =>
+        {
+            AndroidSettingsBridge.SetSize("fullscreen_render_size", enabled ? 0 : 1920, enabled ? 0 : 1080);
+            DisplaySettingsPatches.ApplyRuntimeDisplaySettings();
+        });
+        AddButtonRow(content, "전투 기록", "보내기", CombatRecorder.Share);
+        AddButtonRow(content, "지금 상황 표시 (전투 중)", "표시", () => CombatRecorder.Mark());
 
         if (!NativeFeel.ShowPortUi)
             return;

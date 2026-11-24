@@ -75,6 +75,39 @@ public static class CombatRecorder
         _file = null;
     }
 
+    /// The player marks "look at this moment" from the settings screen; also works outside combat (no-op there).
+    public static bool Mark()
+    {
+        var combat = CombatManager.Instance?.DebugOnlyGetState();
+        if (combat == null || _failed)
+            return false;
+        Record("marker", combat, null, null);
+        return !_failed;
+    }
+
+    /// The exact state sent to the card advisor, so reward advice can be checked too.
+    public static void AdvisorState(string json)
+    {
+        if (_failed || !AndroidSettingsBridge.GetBool(SettingKey, true))
+            return;
+        Pending.Enqueue((Path.Combine(Folder, $"rewards-{DateTime.Now:yyyyMMdd}.jsonl"), System.Text.Encoding.UTF8.GetBytes(json)));
+        if (Interlocked.Exchange(ref _writing, 1) == 0)
+            Task.Run(Flush);
+    }
+
+    public static void Share()
+    {
+        try
+        {
+            var wrapper = (Godot.GodotObject)Godot.Engine.GetSingleton("JavaClassWrapper").Call("wrap", "com.godot.game.GodotApp");
+            wrapper.Call("shareCombatLogs");
+        }
+        catch (Exception exception)
+        {
+            PatchHelper.Log($"[CombatRecorder] share failed: {exception.Message}");
+        }
+    }
+
     private static void Record(string name, ICombatState combat, CardPlay play, PotionModel potion)
     {
         if (_failed)

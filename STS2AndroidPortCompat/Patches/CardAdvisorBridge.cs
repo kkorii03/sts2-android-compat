@@ -366,6 +366,7 @@ public static class CardAdvisorBridge
             writer.WriteEndObject();
         }
         var json = Encoding.UTF8.GetString(buffer.WrittenSpan);
+        CombatRecorder.AdvisorState(json);
         var buildMs = watch.Elapsed.TotalMilliseconds;
         Deliver(json);
         PatchHelper.Log($"[CardAdvisor] {eventName}: {offers.Count} options, {json.Length} chars, build {buildMs:0.0} ms, total {watch.Elapsed.TotalMilliseconds:0.0} ms");

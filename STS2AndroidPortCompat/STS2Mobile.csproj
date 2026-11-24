@@ -20,8 +20,4 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
-  <!-- Personal builds only: a local turn advisor, never part of this repository. -->
-  <ItemGroup Condition="'$(STS2_COMBAT_SIM)' != '' And Exists('$(STS2_COMBAT_SIM)')">
-    <Compile Include="$(STS2_COMBAT_SIM)\Phone\*.cs" />
-  </ItemGroup>
 </Project>

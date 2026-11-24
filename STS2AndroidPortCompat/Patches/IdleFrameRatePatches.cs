@@ -55,10 +55,10 @@ public static class IdleFrameRatePatches
     private static ulong _nextDiagMs;
     private static int _diagCount;
 
-    public static void InputPrefix(InputEvent @event)
+    public static void InputPrefix(InputEvent inputEvent)
     {
         _lastInputMs = Time.GetTicksMsec();
-        _lastInputType = @event?.GetType().Name ?? "";
+        _lastInputType = inputEvent?.GetType().Name ?? "";
         if (_capped)
             Restore();
     }

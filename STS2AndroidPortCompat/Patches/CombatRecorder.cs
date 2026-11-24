@@ -273,6 +273,16 @@ public static class CombatRecorder
             w.WriteStartObject();
             w.WriteString("id", power.Id.Entry);
             w.WriteNumber("amount", power.Amount);
+            try
+            {
+                // what the player sees when it differs (e.g. Hardened Shell: HP it can still lose this turn)
+                var shown = power.DisplayAmount;
+                if (shown != power.Amount)
+                    w.WriteNumber("display", shown);
+            }
+            catch
+            {
+            }
             if (power.SkipNextDurationTick)
                 w.WriteBoolean("skipTick", true);
             w.WriteEndObject();

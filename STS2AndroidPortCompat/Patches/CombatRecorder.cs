@@ -14,6 +14,7 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.Runs;
 using STS2Mobile.Android;
@@ -149,7 +150,7 @@ public static class CombatRecorder
             using (var w = new Utf8JsonWriter(buffer))
             {
                 w.WriteStartObject();
-                w.WriteNumber("v", 1);
+                w.WriteNumber("v", 2); // 2: powers carry "display" when it differs from "amount"
                 w.WriteNumber("seq", _seq++);
                 w.WriteString("event", name);
                 w.WriteString("character", player.Character.Id.Entry);
@@ -283,6 +284,8 @@ public static class CombatRecorder
             catch
             {
             }
+            if (power is SkittishPower skittish)
+                w.WriteBoolean("triggered", skittish.HasGainedBlockThisTurn); // already took its block this turn
             if (power.SkipNextDurationTick)
                 w.WriteBoolean("skipTick", true);
             w.WriteEndObject();

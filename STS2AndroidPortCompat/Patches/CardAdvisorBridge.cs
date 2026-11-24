@@ -511,6 +511,16 @@ public static class CardAdvisorBridge
         {
         }
         writer.WriteEndArray();
+        // Numbers for the combat advisor (same shape as the combat snapshot).
+        TryWrite(() => writer.WriteString("targetType", card.TargetType.ToString()));
+        TryWrite(() => { if (card.CurrentStarCost >= 0) writer.WriteNumber("stars", card.CurrentStarCost); });
+        TryWrite(() => writer.WriteNumber("up", card.CurrentUpgradeLevel));
+        writer.WriteStartArray("keywords");
+        try { foreach (var keyword in card.Keywords) writer.WriteStringValue(keyword.ToString()); } catch { }
+        writer.WriteEndArray();
+        writer.WriteStartObject("vars");
+        try { foreach (var pair in card.DynamicVars) writer.WriteNumber(pair.Key, pair.Value.BaseValue); } catch { }
+        writer.WriteEndObject();
     }
 
     private static string PlainText(string bbcode)

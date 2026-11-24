@@ -135,7 +135,7 @@ public static class CombatRecorder
     }
 
     /// What the player can see right now, as one JSON object; null outside a single-player combat.
-    public static byte[] Snapshot(string name, ICombatState combat, CardPlay play, PotionModel potion)
+    public static byte[] Snapshot(string name, ICombatState combat, CardPlay play, PotionModel potion, Action<Utf8JsonWriter> extra = null)
     {
             var state = RunManager.Instance?.DebugOnlyGetState();
             if (combat == null || state == null || state.Players.Count != 1)
@@ -202,14 +202,20 @@ public static class CombatRecorder
                 w.WriteEndArray();
                 w.WriteStartArray("potions");
                 foreach (var p in player.Potions)
-                    w.WriteStringValue(p.Id.Entry);
+                {
+                    w.WriteStartObject();
+                    w.WriteString("id", p.Id.Entry);
+                    w.WriteString("name", p.Title.GetFormattedText());
+                    w.WriteEndObject();
+                }
                 w.WriteEndArray();
+                extra?.Invoke(w);
                 w.WriteEndObject();
             }
             return buffer.WrittenSpan.ToArray();
     }
 
-    private static void Card(Utf8JsonWriter w, CardModel card)
+    internal static void Card(Utf8JsonWriter w, CardModel card)
     {
         w.WriteString("id", card.Id.Entry);
         w.WriteString("name", card.TitleLocString.GetFormattedText());

@@ -8,6 +8,7 @@ using System.Text.Json;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -47,31 +48,66 @@ public static class RunAdvisorBridge
         var shop = typeof(NMerchantInventory);
         PatchHelper.Patch(harmony, shop, nameof(NMerchantInventory.Open), postfix: PatchHelper.Method(self, nameof(ShopPostfix)));
         PatchHelper.Patch(harmony, shop, "OnPurchaseCompleted", postfix: PatchHelper.Method(self, nameof(ShopPostfix)));
-        PatchHelper.Patch(harmony, shop, "Close", postfix: PatchHelper.Method(self, nameof(GonePrefix)));
-        PatchHelper.Patch(harmony, shop, "_ExitTree", prefix: PatchHelper.Method(self, nameof(GonePrefix)));
+        PatchHelper.Patch(harmony, shop, "Close", postfix: PatchHelper.Method(self, nameof(LeavePrefix)));
+        PatchHelper.Patch(harmony, shop, "_ExitTree", prefix: PatchHelper.Method(self, nameof(LeavePrefix)));
         PatchHelper.Patch(harmony, typeof(RestSiteOption), nameof(RestSiteOption.Generate), postfix: PatchHelper.Method(self, nameof(RestPostfix)));
-        PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.AfterSelectingOption), postfix: PatchHelper.Method(self, nameof(GonePrefix)));
-        PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.BeforeExitingRoom), prefix: PatchHelper.Method(self, nameof(GonePrefix)));
+        PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.AfterSelectingOption), postfix: PatchHelper.Method(self, nameof(LeavePrefix)));
+        PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.BeforeExitingRoom), prefix: PatchHelper.Method(self, nameof(LeavePrefix)));
         PatchHelper.Patch(harmony, typeof(NDeckUpgradeSelectScreen), nameof(NDeckUpgradeSelectScreen.ShowScreen), postfix: PatchHelper.Method(self, nameof(UpgradePostfix)));
-        // _ExitTree is declared on the shared grid screen: only the deck upgrade screen counts.
+        var removal = AccessTools.Method(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForRemoval));
+        if (removal != null)
+            harmony.Patch(removal, prefix: new HarmonyMethod(PatchHelper.Method(self, nameof(RemovalPrefix))));
+        // _ExitTree is declared on the shared grid screen (combat screens too): only ours count.
         PatchHelper.Patch(harmony, typeof(NCardGridSelectionScreen), "_ExitTree", prefix: PatchHelper.Method(self, nameof(GridGonePrefix)));
     }
 
-    private static Action _restAgain; // the rest site advice, sent again when the upgrade screen is cancelled
+    private static Action _again; // the shop / rest site advice, sent again when a deck screen opened from it closes
+    private static bool _gridOpen;
 
-    public static void GridGonePrefix(NCardGridSelectionScreen __instance)
+    public static void GridGonePrefix()
     {
-        if (__instance is not NDeckUpgradeSelectScreen)
+        if (!_gridOpen)
             return;
+        _gridOpen = false;
         GonePrefix();
         try
         {
-            if (_restAgain != null && NRestSiteRoom.Instance != null && GodotObject.IsInstanceValid(NRestSiteRoom.Instance))
-                Later(null, RestSettleSeconds, ++_generation, _restAgain);
+            if (_again != null)
+                Later(null, RestSettleSeconds, ++_generation, _again);
         }
         catch (Exception exception)
         {
-            Fail("rest again", exception);
+            Fail("again", exception);
+        }
+    }
+
+    // ---- card removal screen (merchant, events) -----------------------------------------
+
+    public static void RemovalPrefix(Player player, CardSelectorPrefs prefs, Func<CardModel, bool> filter)
+    {
+        try
+        {
+            if (!Enabled || player == null)
+                return;
+            ++_generation;
+            var list = player.Deck.Cards.Where(c => c.IsRemovable && (filter == null || filter(c))).ToList();
+            Send("remove_select", w =>
+            {
+                w.WriteNumber("pick", prefs.MaxSelect);
+                w.WriteStartArray("removable");
+                foreach (var card in list)
+                {
+                    w.WriteStartObject();
+                    CardFacts(w, card);
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+            });
+            _gridOpen = true;
+        }
+        catch (Exception exception)
+        {
+            Fail("removal", exception);
         }
     }
 
@@ -85,7 +121,7 @@ public static class RunAdvisorBridge
                 return;
             var generation = ++_generation;
             var node = __instance;
-            Later(node, ShopSettleSeconds, generation, () =>
+            Later(node, ShopSettleSeconds, generation, _again = () =>
             {
                 if (!GodotObject.IsInstanceValid(node) || !node.IsOpen || node.Inventory == null)
                     return;
@@ -151,7 +187,7 @@ public static class RunAdvisorBridge
                 return;
             var generation = ++_generation;
             var options = __result.ToList();
-            Later(null, RestSettleSeconds, generation, _restAgain = () => Send("rest_site", w =>
+            Later(null, RestSettleSeconds, generation, _again = () => Send("rest_site", w =>
             {
                 w.WriteStartArray("restOptions");
                 foreach (var option in options)
@@ -192,6 +228,7 @@ public static class RunAdvisorBridge
                 w.WriteNumber("pick", count);
                 Upgradable(w, list, runState);
             });
+            _gridOpen = true;
         }
         catch (Exception exception)
         {
@@ -234,6 +271,12 @@ public static class RunAdvisorBridge
             if (clone != null)
                 Try(() => runState.RemoveCard(clone));
         }
+    }
+
+    public static void LeavePrefix()
+    {
+        _again = null;
+        GonePrefix();
     }
 
     public static void GonePrefix()

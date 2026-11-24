@@ -165,6 +165,8 @@ public static class CombatRecorder
     private static void Card(Utf8JsonWriter w, CardModel card)
     {
         w.WriteString("id", card.Id.Entry);
+        w.WriteString("type", card.Type.ToString());
+        w.WriteString("targetType", card.TargetType.ToString());
         w.WriteNumber("up", card.CurrentUpgradeLevel);
         w.WriteNumber("cost", card.EnergyCost.CostsX ? -1 : card.EnergyCost.GetWithModifiers(CostModifiers.All));
         if (card.CurrentStarCost >= 0)

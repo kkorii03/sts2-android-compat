@@ -8,14 +8,17 @@ using System.Text.Json;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.CardSelection;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.RestSite;
+using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
+using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
 using MegaCrit.Sts2.Core.Runs;
 using STS2Mobile.Android;
@@ -53,6 +56,11 @@ public static class RunAdvisorBridge
         PatchHelper.Patch(harmony, typeof(RestSiteOption), nameof(RestSiteOption.Generate), postfix: PatchHelper.Method(self, nameof(RestPostfix)));
         PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.AfterSelectingOption), postfix: PatchHelper.Method(self, nameof(LeavePrefix)));
         PatchHelper.Patch(harmony, typeof(NRestSiteRoom), nameof(NRestSiteRoom.BeforeExitingRoom), prefix: PatchHelper.Method(self, nameof(LeavePrefix)));
+        PatchHelper.Patch(harmony, typeof(NMapScreen), nameof(NMapScreen.Open), postfix: PatchHelper.Method(self, nameof(MapPostfix)));
+        PatchHelper.Patch(harmony, typeof(NMapScreen), nameof(NMapScreen.Close), prefix: PatchHelper.Method(self, nameof(MapGonePrefix)));
+        PatchHelper.Patch(harmony, typeof(NEventRoom), "SetOptions", postfix: PatchHelper.Method(self, nameof(AncientPostfix)));
+        PatchHelper.Patch(harmony, typeof(NEventRoom), nameof(NEventRoom.OptionButtonClicked), prefix: PatchHelper.Method(self, nameof(AncientGonePrefix)));
+        PatchHelper.Patch(harmony, typeof(NEventRoom), "_ExitTree", prefix: PatchHelper.Method(self, nameof(AncientGonePrefix)));
         PatchHelper.Patch(harmony, typeof(RunManager), nameof(RunManager.CleanUp), prefix: PatchHelper.Method(self, nameof(LeavePrefix))); // save and quit, abandon
         PatchHelper.Patch(harmony, typeof(NDeckUpgradeSelectScreen), nameof(NDeckUpgradeSelectScreen.ShowScreen), postfix: PatchHelper.Method(self, nameof(UpgradePostfix)));
         var removal = AccessTools.Method(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForRemoval));
@@ -72,6 +80,11 @@ public static class RunAdvisorBridge
             return;
         _gridOpen = false;
         GonePrefix();
+        Again();
+    }
+
+    private static void Again()
+    {
         try
         {
             if (_again != null)
@@ -218,6 +231,120 @@ public static class RunAdvisorBridge
         }
     }
 
+    // ---- map -----------------------------------------------------------------------------
+
+    private static bool _mapOpen;
+
+    public static void MapPostfix()
+    {
+        try
+        {
+            if (!Enabled || _mapOpen || CombatManager.Instance.IsInProgress)
+                return;
+            _mapOpen = true;
+            Later(null, 0.4, ++_generation, () => Send("map", w => Map(w, RunManager.Instance.DebugOnlyGetState())));
+        }
+        catch (Exception exception)
+        {
+            Fail("map", exception);
+        }
+    }
+
+    /// What the player can scroll through on the map screen: every point, its kind and its paths.
+    private static void Map(Utf8JsonWriter w, RunState state)
+    {
+        var map = state.Map;
+        var current = state.CurrentMapPoint;
+        if (current != null)
+        {
+            w.WriteNumber("col", current.coord.col);
+            w.WriteNumber("row", current.coord.row);
+        }
+        w.WriteNumber("rows", map.GetRowCount());
+        w.WriteStartArray("next");
+        foreach (var point in current == null ? Enumerable.Empty<MapPoint>() : MapTravel.GetTravelablePointsFrom(state, current))
+            Coord(w, point);
+        w.WriteEndArray();
+        w.WriteStartArray("points");
+        foreach (var point in map.GetAllMapPoints())
+        {
+            w.WriteStartObject();
+            w.WriteNumber("c", point.coord.col);
+            w.WriteNumber("r", point.coord.row);
+            w.WriteString("t", point.PointType.ToString());
+            w.WriteStartArray("to");
+            foreach (var child in point.Children)
+                Coord(w, child);
+            w.WriteEndArray();
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+    }
+
+    private static void Coord(Utf8JsonWriter w, MapPoint point)
+    {
+        w.WriteStartArray();
+        w.WriteNumberValue(point.coord.col);
+        w.WriteNumberValue(point.coord.row);
+        w.WriteEndArray();
+    }
+
+    public static void MapGonePrefix()
+    {
+        if (!_mapOpen)
+            return;
+        _mapOpen = false;
+        GonePrefix();
+        Again();
+    }
+
+    // ---- Ancient (the choice at the start of an act) --------------------------------------
+
+    private static bool _ancientOpen;
+
+    public static void AncientPostfix(EventModel eventModel)
+    {
+        try
+        {
+            if (!Enabled || eventModel is not AncientEventModel ancient || ancient.IsFinished)
+                return;
+            var options = ancient.CurrentOptions.Where(o => !o.IsProceed).ToList();
+            if (options.Count < 2)
+                return;
+            _ancientOpen = true;
+            Later(null, 0.4, ++_generation, _again = () => Send("ancient", w =>
+            {
+                w.WriteString("ancient", ancient.Id.Entry);
+                w.WriteStartArray("options");
+                foreach (var option in options)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("id", option.Relic?.Id.Entry ?? option.TextKey?.Split('.').LastOrDefault(p => p != "title" && p != "description"));
+                    w.WriteBoolean("relic", option.Relic != null);
+                    w.WriteString("textKey", option.TextKey);
+                    w.WriteBoolean("locked", option.IsLocked);
+                    Try(() => w.WriteString("name", Plain(option.Title.GetFormattedText())));
+                    Try(() => w.WriteString("text", Plain(option.Description.GetFormattedText())));
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+            }));
+        }
+        catch (Exception exception)
+        {
+            Fail("ancient", exception);
+        }
+    }
+
+    public static void AncientGonePrefix()
+    {
+        if (!_ancientOpen)
+            return;
+        _ancientOpen = false;
+        _again = null;
+        GonePrefix();
+    }
+
     // ---- deck upgrade screen ------------------------------------------------------------
 
     public static void UpgradePostfix(IReadOnlyList<CardModel> cards, CardSelectorPrefs prefs, IRunState runState)
@@ -288,6 +415,8 @@ public static class RunAdvisorBridge
     public static void LeavePrefix()
     {
         _shopOpen = false;
+        _mapOpen = false;
+        _ancientOpen = false;
         _again = null;
         GonePrefix();
     }

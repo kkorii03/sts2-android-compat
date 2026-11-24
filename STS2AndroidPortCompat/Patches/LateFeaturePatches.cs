@@ -47,6 +47,9 @@ public static class LateFeaturePatches
         Run("Combat recorder", () => CombatRecorder.Apply(_harmony));
         Run("Combat state bridge", () => CombatStateBridge.Apply(_harmony));
         Run("Run advisor bridge", () => RunAdvisorBridge.Apply(_harmony));
+#if STS2_LAB
+        Run("Lab", () => AutoLab.Apply(_harmony));
+#endif
     }
 
     private static void Run(string label, Action apply)

@@ -11,6 +11,7 @@ using MegaCrit.Sts2.Core.CardSelection;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.RestSite;
@@ -66,6 +67,12 @@ public static class RunAdvisorBridge
         var removal = AccessTools.Method(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForRemoval));
         if (removal != null)
             harmony.Patch(removal, prefix: new HarmonyMethod(PatchHelper.Method(self, nameof(RemovalPrefix))));
+        var transform = AccessTools.Method(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForTransformation));
+        if (transform != null)
+            harmony.Patch(transform, prefix: new HarmonyMethod(PatchHelper.Method(self, nameof(TransformPrefix))));
+        var enchant = AccessTools.Method(typeof(CardSelectCmd), nameof(CardSelectCmd.FromDeckForEnchantment), new[] { typeof(IReadOnlyList<CardModel>), typeof(EnchantmentModel), typeof(int), typeof(CardSelectorPrefs) });
+        if (enchant != null)
+            harmony.Patch(enchant, prefix: new HarmonyMethod(PatchHelper.Method(self, nameof(EnchantPrefix))));
         // _ExitTree is declared on the shared grid screen (combat screens too): only ours count.
         PatchHelper.Patch(harmony, typeof(NCardGridSelectionScreen), "_ExitTree", prefix: PatchHelper.Method(self, nameof(GridGonePrefix)));
     }
@@ -125,6 +132,53 @@ public static class RunAdvisorBridge
         catch (Exception exception)
         {
             Fail("removal", exception);
+        }
+    }
+
+    // ---- transform / enchant a deck card (events, rest site, relics) ------------------------
+
+    public static void TransformPrefix(Player player, CardSelectorPrefs prefs)
+    {
+        if (player != null)
+            DeckSelect("transform_select", player.Deck.Cards.Where(c => c.Type != CardType.Quest && c.IsTransformable).ToList(), prefs, null);
+    }
+
+    public static void EnchantPrefix(IReadOnlyList<CardModel> cards, EnchantmentModel enchantment, int amount, CardSelectorPrefs prefs)
+    {
+        if (cards != null)
+            DeckSelect("enchant_select", cards.ToList(), prefs, w =>
+            {
+                w.WriteString("enchantment", enchantment.Id.Entry);
+                w.WriteNumber("amount", amount);
+                Try(() => w.WriteString("enchantmentName", Plain(enchantment.Title.GetFormattedText())));
+            });
+    }
+
+    private static void DeckSelect(string name, List<CardModel> list, CardSelectorPrefs prefs, Action<Utf8JsonWriter> more)
+    {
+        try
+        {
+            if (!Enabled || list.Count == 0 || list.Count <= prefs.MinSelect && !prefs.RequireManualConfirmation)
+                return;
+            ++_generation;
+            Send(name, w =>
+            {
+                w.WriteNumber("pick", prefs.MaxSelect);
+                more?.Invoke(w);
+                w.WriteStartArray("cards");
+                foreach (var card in list)
+                {
+                    w.WriteStartObject();
+                    CardFacts(w, card);
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+            });
+            _gridOpen = true;
+        }
+        catch (Exception exception)
+        {
+            Fail(name, exception);
         }
     }
 
@@ -312,15 +366,16 @@ public static class RunAdvisorBridge
     {
         try
         {
-            if (!Enabled || eventModel is not AncientEventModel ancient || ancient.IsFinished)
+            if (!Enabled || eventModel == null || eventModel.IsFinished)
                 return;
-            var options = ancient.CurrentOptions.Where(o => !o.IsProceed).ToList();
+            var ancient = eventModel is AncientEventModel;
+            var options = eventModel.CurrentOptions.Where(o => !o.IsProceed).ToList();
             if (options.Count < 2)
                 return;
             _ancientOpen = true;
-            Later(null, 0.4, ++_generation, _again = () => Send("ancient", w =>
+            Later(null, 0.4, ++_generation, _again = () => Send(ancient ? "ancient" : "event", w =>
             {
-                w.WriteString("ancient", ancient.Id.Entry);
+                w.WriteString(ancient ? "ancient" : "eventId", eventModel.Id.Entry);
                 w.WriteStartArray("options");
                 foreach (var option in options)
                 {
@@ -329,6 +384,7 @@ public static class RunAdvisorBridge
                     w.WriteBoolean("relic", option.Relic != null);
                     w.WriteString("textKey", option.TextKey);
                     w.WriteBoolean("locked", option.IsLocked);
+                    Try(() => w.WriteBoolean("kills", option.WillKillPlayer != null && eventModel.Owner != null && option.WillKillPlayer(eventModel.Owner)));
                     Try(() => w.WriteString("name", Plain(option.Title.GetFormattedText())));
                     Try(() => w.WriteString("text", Plain(option.Description.GetFormattedText())));
                     w.WriteEndObject();

@@ -51,6 +51,7 @@ public static class CombatStateBridge
         Select(harmony, "FromSimpleGrid", nameof(GridPrefix), typeof(PlayerChoiceContext), typeof(IReadOnlyList<CardModel>), typeof(Player), typeof(CardSelectorPrefs));
         Select(harmony, "FromHand", nameof(HandPrefix), typeof(PlayerChoiceContext), typeof(Player), typeof(CardSelectorPrefs), typeof(Func<CardModel, bool>), typeof(AbstractModel));
         Select(harmony, "FromHandForDiscard", nameof(HandPrefix), typeof(PlayerChoiceContext), typeof(Player), typeof(CardSelectorPrefs), typeof(Func<CardModel, bool>), typeof(AbstractModel));
+        Select(harmony, "FromHandForUpgrade", nameof(HandUpgradePrefix), typeof(PlayerChoiceContext), typeof(Player), typeof(AbstractModel));
         Select(harmony, "FromChooseACardScreen", nameof(ChoosePrefix), typeof(PlayerChoiceContext), typeof(IReadOnlyList<CardModel>), typeof(Player), typeof(bool));
     }
 
@@ -73,6 +74,8 @@ public static class CombatStateBridge
     public static void HandPrefix(Player player, CardSelectorPrefs prefs, Func<CardModel, bool> filter, MethodBase __originalMethod) =>
         Choice(__originalMethod.Name == "FromHandForDiscard" ? "HandDiscard" : "Hand", player, PileType.Hand.GetPile(player).Cards.Where(c => filter == null || filter(c)), prefs);
 
+    public static void HandUpgradePrefix(Player player) => Choice("HandUpgrade", player, PileType.Hand.GetPile(player).Cards.Where(c => c.IsUpgradable), null);
+
     public static void ChoosePrefix(IReadOnlyList<CardModel> cards, Player player, bool canSkip) => Choice("Choose", player, cards, null, canSkip);
 
     private static void Choice(string from, Player player, IEnumerable<CardModel> cards, CardSelectorPrefs? prefs, bool canSkip = false)
@@ -93,7 +96,7 @@ public static class CombatStateBridge
             {
                 w.WriteStartObject("choice");
                 w.WriteString("from", from);
-                w.WriteString("promptKey", prompt?.LocEntryKey);
+                w.WriteString("promptKey", from == "HandUpgrade" ? "CHOOSE_CARD_UPGRADE_HEADER" : prompt?.LocEntryKey);
                 string text = null;
                 try { text = prompt?.GetFormattedText(); } catch { }
                 w.WriteString("prompt", text);

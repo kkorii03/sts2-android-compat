@@ -8,6 +8,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Enchantments;
+using MegaCrit.Sts2.Core.Combat.History.Entries;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -32,7 +34,11 @@ public static class CombatRecorder
 {
     public const string SettingKey = "combat_recorder";
     private const string Folder = "/storage/emulated/0/Android/data/com.megacrit.sts2re/files/combat-log";
+#if STS2_LAB
+    private const int KeepFiles = 4000;
+#else
     private const int KeepFiles = 80;
+#endif
 
     private static readonly ConcurrentQueue<(string File, byte[] Line)> Pending = new();
     private static int _writing;
@@ -162,6 +168,7 @@ public static class CombatRecorder
                 w.WriteNumber("plays", history.CardPlaysStarted.Count(e => e.HappenedThisTurn(combat) && e.CardPlay.Player == player));
                 w.WriteNumber("skills", history.CardPlaysFinished.Count(e => e.HappenedThisTurn(combat) && e.CardPlay.Player == player && e.CardPlay.Card.Type == CardType.Skill));
                 w.WriteNumber("attacks", history.CardPlaysFinished.Count(e => e.HappenedThisTurn(combat) && e.CardPlay.Player == player && e.CardPlay.Card.Type == CardType.Attack));
+                History(w, combat, player, pcs, state);
                 if (play != null)
                 {
                     w.WriteStartObject("play");
@@ -216,6 +223,67 @@ public static class CombatRecorder
             return buffer.WrittenSpan.ToArray();
     }
 
+    /// Things the player has seen happen that the advisor needs: this turn's and this fight's counts, orbs, the moves enemies have made.
+    private static void History(Utf8JsonWriter w, ICombatState combat, Player player, PlayerCombatState pcs, RunState state)
+    {
+        var me = player.Creature;
+        var history = CombatManager.Instance.History;
+        var all = history.Entries;
+        w.WriteStartObject("hist");
+        Part(() => w.WriteString("room", state.CurrentRoom?.RoomType.ToString()));
+        Part(() => w.WriteNumber("exhausted", all.OfType<CardExhaustedEntry>().Count(e => e.Actor == me && e.HappenedThisTurn(combat))));
+        Part(() => w.WriteNumber("discarded", all.OfType<CardDiscardedEntry>().Count(e => e.Actor == me && e.HappenedThisTurn(combat))));
+        Part(() => w.WriteNumber("hurtTurn", all.OfType<DamageReceivedEntry>().Count(e => e.Actor == me && e.Result.UnblockedDamage > 0 && e.HappenedThisTurn(combat))));
+        Part(() => w.WriteNumber("hurtCombat", all.OfType<DamageReceivedEntry>().Count(e => e.Actor == me && e.Result.UnblockedDamage > 0)));
+        Part(() => w.WriteNumber("drawn", all.OfType<CardDrawnEntry>().Count(e => e.Actor == me)));
+        Part(() => w.WriteNumber("shivs", history.CardPlaysFinished.Count(e => e.HappenedThisTurn(combat) && e.CardPlay.Player == player && e.CardPlay.Card.Id.Entry == "SHIV")));
+        Part(() => w.WriteNumber("blockPlays", all.OfType<BlockGainedEntry>().Where(e => e.Actor == me && e.CardPlay != null && e.HappenedThisTurn(combat)).Select(e => e.CardPlay).Distinct().Count()));
+        Part(() => w.WriteNumber("lightning", all.OfType<OrbChanneledEntry>().Count(e => e.Actor == me && e.Orb.Id.Entry.StartsWith("LIGHTNING", StringComparison.Ordinal))));
+        Part(() => w.WriteNumber("orbsChanneled", all.OfType<OrbChanneledEntry>().Count(e => e.Actor == me)));
+        Part(() => w.WriteNumber("exhaustedCombat", all.OfType<CardExhaustedEntry>().Count(e => e.Actor == me)));
+        Part(() => w.WriteNumber("ostyAttacks", all.OfType<CreatureAttackedEntry>().Count(e => e.Actor != me && e.Actor != null && !e.Actor.IsPlayer && e.Actor.Side == me.Side && e.HappenedThisTurn(combat))));
+        Part(() => w.WriteNumber("playsAll", history.CardPlaysFinished.Count(e => e.CardPlay.Player == player)));
+        Part(() => w.WriteNumber("ethPlays", all.OfType<CardPlayFinishedEntry>().Count(e => e.CardPlay.Player == player && e.WasEthereal)));
+        Part(() => w.WriteNumber("made", all.OfType<CardGeneratedEntry>().Count(e => e.Creator == player)));
+        Part(() => w.WriteNumber("starsGot", all.OfType<StarsModifiedEntry>().Where(e => e.Actor == me && e.Amount > 0 && e.HappenedThisTurn(combat)).Sum(e => e.Amount)));
+        Part(() => w.WriteNumber("drewTurn", all.OfType<CardDrawnEntry>().Count(e => e.Actor == me && !e.FromHandDraw && e.HappenedThisTurn(combat))));
+        Part(() => w.WriteNumber("energySpent", all.OfType<EnergySpentEntry>().Where(e => e.Actor == me && e.HappenedThisTurn(combat)).Sum(e => e.Amount)));
+        Part(() => w.WriteNumber("doomed", all.OfType<PowerReceivedEntry>().Count(e => e.Power.Id.Entry == "DOOM_POWER" && e.Applier == me && e.HappenedThisTurn(combat))));
+        w.WriteEndObject();
+        var orbs = pcs.OrbQueue;
+        if (orbs != null && (orbs.Capacity > 0 || orbs.Orbs.Count > 0))
+        {
+            w.WriteNumber("orbSlots", orbs.Capacity);
+            w.WriteStartArray("orbs");
+            foreach (var orb in orbs.Orbs)
+            {
+                w.WriteStartObject();
+                w.WriteString("id", orb.Id.Entry);
+                Part(() => w.WriteNumber("passive", orb.PassiveVal));
+                Part(() => w.WriteNumber("evoke", orb.EvokeVal));
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+        }
+        Part(() =>
+        {
+            w.WriteStartObject("moves");
+            foreach (var group in all.OfType<MonsterPerformedMoveEntry>().Where(e => e.Actor?.CombatId != null).GroupBy(e => e.Actor.CombatId.ToString()))
+            {
+                w.WriteStartArray(group.Key);
+                foreach (var entry in group)
+                    w.WriteStringValue(entry.Move.Id);
+                w.WriteEndArray();
+            }
+            w.WriteEndObject();
+        });
+    }
+
+    private static void Part(Action write)
+    {
+        try { write(); } catch { }
+    }
+
     internal static void Card(Utf8JsonWriter w, CardModel card)
     {
         w.WriteString("id", card.Id.Entry);
@@ -232,6 +300,7 @@ public static class CombatRecorder
         {
             w.WriteString("enchantment", card.Enchantment.Id.Entry);
             w.WriteNumber("enchantmentAmount", card.Enchantment.Amount);
+            w.WriteBoolean("enchantmentUsed", card.Enchantment.Status == EnchantmentStatus.Disabled);
         }
         if (card.Keywords.Count > 0)
         {

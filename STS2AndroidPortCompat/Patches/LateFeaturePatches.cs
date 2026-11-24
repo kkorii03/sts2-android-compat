@@ -44,6 +44,7 @@ public static class LateFeaturePatches
         Run("Mobile touch targets", () => MobileTouchTargetPatches.Apply(_harmony));
         Run("Card advisor bridge", () => CardAdvisorBridge.Apply(_harmony));
         Run("Idle frame rate saver", () => IdleFrameRatePatches.Apply(_harmony));
+        Run("Combat recorder", () => CombatRecorder.Apply(_harmony));
     }
 
     private static void Run(string label, Action apply)

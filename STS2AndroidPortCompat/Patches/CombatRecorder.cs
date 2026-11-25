@@ -303,6 +303,8 @@ public static class CombatRecorder
             w.WriteString("enchantment", card.Enchantment.Id.Entry);
             w.WriteNumber("enchantmentAmount", card.Enchantment.Amount);
             w.WriteBoolean("enchantmentUsed", card.Enchantment.Status == EnchantmentStatus.Disabled);
+            if (card.Enchantment.Id.Entry == "MOMENTUM")
+                w.WriteNumber("enchantmentExtra", (int)card.Enchantment.EnchantDamageAdditive(0m, MegaCrit.Sts2.Core.ValueProps.ValueProp.Move)); // shown on the card
         }
         var keywords = card.Keywords;
         if (keywords.Count > 0)

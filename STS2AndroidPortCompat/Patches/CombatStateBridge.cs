@@ -31,6 +31,8 @@ public static class CombatStateBridge
     private static GodotObject _java;
     private static int _generation;
 
+    internal static int Generation => _generation;
+
     public static void Apply(Harmony harmony)
     {
         if (!NativeFeel.IsAndroid)
@@ -146,8 +148,10 @@ public static class CombatStateBridge
                         if (!CombatManager.Instance.IsInProgress || phase is null or PlayerTurnPhase.None or PlayerTurnPhase.End)
                             return;
                         var snapshot = CombatRecorder.Snapshot("combat", combatState, null, null);
-                        if (snapshot != null)
-                            Deliver(Encoding.UTF8.GetString(snapshot));
+                        if (snapshot == null)
+                            return;
+                        Deliver(Encoding.UTF8.GetString(snapshot));
+                        CombatPositions.Start(combatState, generation);
                     }
                     catch (Exception exception)
                     {
@@ -174,7 +178,7 @@ public static class CombatStateBridge
         }
     }
 
-    private static void Deliver(string json)
+    internal static void Deliver(string json)
     {
         if (_java == null || !GodotObject.IsInstanceValid(_java))
             _java = (GodotObject)Engine.GetSingleton("JavaClassWrapper").Call("wrap", "com.godot.game.GodotApp");

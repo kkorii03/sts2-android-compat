@@ -121,6 +121,11 @@ public static class CombatStateBridge
             var json = Encoding.UTF8.GetString(snapshot);
             CombatRecorder.AdvisorState(json);
             Deliver(json);
+            // The choice ended the watch of the generation before. A choice that no card play or potion
+            // follows (a relic, a power, an enemy) would leave the advisor with the state before it: the
+            // watch goes on, waits while the choice covers the fight and sends what is there once it is gone.
+            _seen = 0;
+            CombatPositions.Start(combat, _generation);
         }
         catch (Exception exception)
         {

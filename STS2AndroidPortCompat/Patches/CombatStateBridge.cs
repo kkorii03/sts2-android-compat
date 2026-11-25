@@ -152,7 +152,7 @@ public static class CombatStateBridge
                             return;
                         _told = _seen = Look(combatState);
                         _settled = 0;
-                        Deliver(Encoding.UTF8.GetString(snapshot));
+                        Tell(Encoding.UTF8.GetString(snapshot));
                         CombatPositions.Start(combatState, generation);
                     }
                     catch (Exception exception)
@@ -210,6 +210,14 @@ public static class CombatStateBridge
             return;
         }
         var look = Look(combat);
+        var now = Time.GetTicksMsec();
+        var away = now - _lookAt > 2500; // the game was in the background
+        _lookAt = now;
+        if (look == _told && _last != null && (away || now - _lastAt > 15000))
+        {
+            _lastAt = now;
+            Deliver(_last); // the advisor may have missed it or have been restarted since; it ignores what it knows
+        }
         if (look == _told || look != _seen)
         {
             _seen = look;
@@ -222,13 +230,18 @@ public static class CombatStateBridge
         _told = look;
         var snapshot = CombatRecorder.Snapshot("combat", combat, null, null);
         if (snapshot != null)
-        {
-            Deliver(Encoding.UTF8.GetString(snapshot));
-            Resent++;
-        }
+            Tell(Encoding.UTF8.GetString(snapshot));
     }
 
-    internal static int Resent;
+    private static string _last;
+    private static ulong _lastAt, _lookAt;
+
+    private static void Tell(string json)
+    {
+        _last = json;
+        _lastAt = Time.GetTicksMsec();
+        Deliver(json);
+    }
 
     public static void HidePrefix()
     {

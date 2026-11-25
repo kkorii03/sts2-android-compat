@@ -383,6 +383,10 @@ public static class LanMultiplayerPatches
 
         try
         {
+            // Without any loaded mod there is no mod assembly to find: skip the scan over every
+            // type of every assembly (a visible hitch when the main menu appears).
+            if (!ModManager.GetLoadedMods().Any())
+                return false;
             return AppDomain.CurrentDomain.GetAssemblies().Any(IsSts2GameLobbyAssembly);
         }
         catch (Exception exception)

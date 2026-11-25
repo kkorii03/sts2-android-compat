@@ -75,6 +75,9 @@ public static class CardAdvisorBridge
     private static bool _rewardOpen;
     private static int _shopGeneration;
     private static bool _shopOpen;
+    // The "deck" array of the current screen: built for its first send, reused by the settled
+    // second one. Dropped with every generation change.
+    private static byte[] _deckPart;
     private static GodotObject _javaBridge;
     private static bool _javaBridgeFailed;
 
@@ -127,6 +130,7 @@ public static class CardAdvisorBridge
             if (__instance is NChooseACardSelectionScreen && CombatManager.Instance.IsInProgress)
                 return; // a card effect in combat, not a reward: CombatStateBridge sends it as a choice
             var generation = ++_rewardGeneration;
+            _deckPart = null;
             var screen = __instance;
             Callable.From(() => SendRewardIfCurrent(screen, generation, predictSlots: true)).CallDeferred();
             var tree = screen.GetTree();
@@ -144,6 +148,7 @@ public static class CardAdvisorBridge
         try
         {
             _rewardGeneration++;
+            _deckPart = null;
             if (!_rewardOpen)
                 return;
             _rewardOpen = false;
@@ -241,6 +246,7 @@ public static class CardAdvisorBridge
             if (!Enabled || inventory == null)
                 return;
             var generation = ++_shopGeneration;
+            _deckPart = null;
             if (predict)
                 Callable.From(() => SendShopIfCurrent(inventory, generation, predictSlots: true)).CallDeferred();
             var tree = inventory.GetTree();
@@ -258,6 +264,7 @@ public static class CardAdvisorBridge
         try
         {
             _shopGeneration++;
+            _deckPart = null;
             if (!_shopOpen)
                 return;
             _shopOpen = false;
@@ -409,7 +416,37 @@ public static class CardAdvisorBridge
         }
         writer.WriteEndObject();
 
-        writer.WriteStartArray("deck");
+        if (_deckPart == null)
+        {
+            var deck = new ArrayBufferWriter<byte>(16384);
+            using (var deckWriter = new Utf8JsonWriter(deck, Refs.WriterOptions))
+                WriteDeck(deckWriter, player);
+            _deckPart = deck.WrittenSpan.ToArray();
+        }
+        writer.WritePropertyName("deck");
+        writer.WriteRawValue(_deckPart, skipInputValidation: true);
+
+        writer.WriteStartArray("relics");
+        if (player != null)
+        {
+            try
+            {
+                foreach (var relic in player.Relics)
+                {
+                    if (relic != null)
+                        writer.WriteStringValue(relic.Id.Entry);
+                }
+            }
+            catch
+            {
+            }
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteDeck(Utf8JsonWriter writer, Player player)
+    {
+        writer.WriteStartArray();
         if (player != null)
         {
             try
@@ -425,23 +462,6 @@ public static class CardAdvisorBridge
                     writer.WriteBoolean("upgraded", card.IsUpgraded);
                     WriteCardFacts(writer, card);
                     writer.WriteEndObject();
-                }
-            }
-            catch
-            {
-            }
-        }
-        writer.WriteEndArray();
-
-        writer.WriteStartArray("relics");
-        if (player != null)
-        {
-            try
-            {
-                foreach (var relic in player.Relics)
-                {
-                    if (relic != null)
-                        writer.WriteStringValue(relic.Id.Entry);
                 }
             }
             catch

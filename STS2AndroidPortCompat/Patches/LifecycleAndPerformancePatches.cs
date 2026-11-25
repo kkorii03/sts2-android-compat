@@ -541,6 +541,7 @@ public static class LifecycleAndPerformancePatches
         int nullLoads = 0;
         int failed = 0;
         ulong started = Time.GetTicksMsec();
+        ulong frameStarted = started;
         for (int i = 0; i < assetPaths.Count; i++)
         {
             string path = assetPaths[i];
@@ -574,11 +575,13 @@ public static class LifecycleAndPerformancePatches
             }
 
             loaded++;
-            if ((loaded % 8) == 0)
+            // Time-sliced behind the visible main menu, like RunSerializedAndroidPreloadAsync.
+            if (loadingScreen != null ? (loaded % 8) == 0 : Time.GetTicksMsec() - frameStarted >= BackgroundPreloadSliceMs)
             {
                 float progress = assetPaths.Count == 0 ? progressEnd : progressStart + ((progressEnd - progressStart) * loaded / assetPaths.Count);
                 loadingScreen?.SetStatus(title, $"{loaded:N0}/{assetPaths.Count:N0}: {GetResourceDisplayName(path)}", progress);
                 await WaitForFramesAsync(1);
+                frameStarted = Time.GetTicksMsec();
             }
         }
 

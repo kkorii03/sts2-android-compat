@@ -42,6 +42,7 @@ public static class CombatRecorder
 
     private static readonly ConcurrentQueue<(string File, byte[] Line)> Pending = new();
     private static int _writing;
+    private static string _prunedFor; // Flush only: the last file written to
     private static string _file;
     private static int _seq;
     private static bool _failed;
@@ -303,10 +304,11 @@ public static class CombatRecorder
             w.WriteNumber("enchantmentAmount", card.Enchantment.Amount);
             w.WriteBoolean("enchantmentUsed", card.Enchantment.Status == EnchantmentStatus.Disabled);
         }
-        if (card.Keywords.Count > 0)
+        var keywords = card.Keywords;
+        if (keywords.Count > 0)
         {
             w.WriteStartArray("keywords");
-            foreach (var keyword in card.Keywords)
+            foreach (var keyword in keywords)
                 w.WriteStringValue(keyword.ToString());
             w.WriteEndArray();
         }
@@ -397,14 +399,21 @@ public static class CombatRecorder
             try
             {
                 Directory.CreateDirectory(Folder);
+                var prune = false;
                 while (Pending.TryDequeue(out var item))
                 {
                     using var stream = new FileStream(item.File, FileMode.Append, System.IO.FileAccess.Write, FileShare.Read);
                     stream.Write(item.Line, 0, item.Line.Length);
                     stream.WriteByte((byte)'\n');
+                    prune |= item.File != _prunedFor;
+                    _prunedFor = item.File;
                 }
-                foreach (var old in new DirectoryInfo(Folder).GetFiles("*.jsonl").OrderByDescending(f => f.LastWriteTimeUtc).Skip(KeepFiles))
-                    old.Delete();
+                // Only a new file can push the folder over the limit.
+                if (prune)
+                {
+                    foreach (var old in new DirectoryInfo(Folder).GetFiles("*.jsonl").OrderByDescending(f => f.LastWriteTimeUtc).Skip(KeepFiles))
+                        old.Delete();
+                }
             }
             catch (Exception exception)
             {

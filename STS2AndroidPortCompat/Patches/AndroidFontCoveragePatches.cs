@@ -30,6 +30,19 @@ public static class AndroidFontCoveragePatches
     private static readonly Dictionary<ulong, Font> WrappedBaseFonts = new();
     private static readonly HashSet<ulong> FontsWithLocaleCoverage = new();
 
+    // Created once, on the first control handled (never during the startup patch pass); a string
+    // literal here would make a new StringName for every added control.
+    private static class ThemeNames
+    {
+        internal static readonly StringName Font = "font";
+        internal static readonly StringName FontSeparator = "font_separator";
+        internal static readonly StringName Normal = "normal_font";
+        internal static readonly StringName Bold = "bold_font";
+        internal static readonly StringName Italics = "italics_font";
+        internal static readonly StringName BoldItalics = "bold_italics_font";
+        internal static readonly StringName Mono = "mono_font";
+    }
+
     private static SceneTree _subscribedTree;
     private static string _locale = string.Empty;
     private static long _localeProbe;
@@ -218,19 +231,19 @@ public static class AndroidFontCoveragePatches
         if (node is RichTextLabel richTextLabel)
         {
             int changed = 0;
-            changed += ApplyControlFontFallback(richTextLabel, "normal_font", _localeRegularFont);
-            changed += ApplyControlFontFallback(richTextLabel, "bold_font", _localeBoldFont);
-            changed += ApplyControlFontFallback(richTextLabel, "italics_font", _localeItalicFont);
-            changed += ApplyControlFontFallback(richTextLabel, "bold_italics_font", _localeBoldFont);
-            changed += ApplyControlFontFallback(richTextLabel, "mono_font", _localeRegularFont);
+            changed += ApplyControlFontFallback(richTextLabel, ThemeNames.Normal, _localeRegularFont);
+            changed += ApplyControlFontFallback(richTextLabel, ThemeNames.Bold, _localeBoldFont);
+            changed += ApplyControlFontFallback(richTextLabel, ThemeNames.Italics, _localeItalicFont);
+            changed += ApplyControlFontFallback(richTextLabel, ThemeNames.BoldItalics, _localeBoldFont);
+            changed += ApplyControlFontFallback(richTextLabel, ThemeNames.Mono, _localeRegularFont);
             return changed;
         }
 
         if (node is Label label)
-            return ApplyControlFontFallback(label, "font", _localeRegularFont);
+            return ApplyControlFontFallback(label, ThemeNames.Font, _localeRegularFont);
 
         if (node is Button || node is LineEdit || node is TextEdit || node is ItemList || node is Tree || node is TabBar)
-            return ApplyControlFontFallback((Control)node, "font", _localeRegularFont);
+            return ApplyControlFontFallback((Control)node, ThemeNames.Font, _localeRegularFont);
 
         if (node is Label3D label3D)
         {
@@ -262,8 +275,8 @@ public static class AndroidFontCoveragePatches
     {
         if (popupMenu == null || !GodotObject.IsInstanceValid(popupMenu))
             return 0;
-        int changed = ApplyWindowFontFallback(popupMenu, "font", _localeRegularFont);
-        changed += ApplyWindowFontFallback(popupMenu, "font_separator", _localeRegularFont);
+        int changed = ApplyWindowFontFallback(popupMenu, ThemeNames.Font, _localeRegularFont);
+        changed += ApplyWindowFontFallback(popupMenu, ThemeNames.FontSeparator, _localeRegularFont);
         return changed;
     }
 

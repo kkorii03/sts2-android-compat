@@ -253,7 +253,9 @@ public partial class AndroidMobileReactionButton : Control
             mobileFeature = false;
         }
         bool mobileRuntime = MobileReactionVisibilityPolicy.IsMobileRuntime(mobileFeature, osName);
-        bool settingEnabled = AndroidSettingsBridge.GetBool("show_mobile_emoji_button", true);
+        // Multiplayer is hidden from the menu without the port UI (NativeFeel), so there is nobody
+        // to react to: do not watch every node for multiplayer screens then.
+        bool settingEnabled = NativeFeel.ShowPortUi && AndroidSettingsBridge.GetBool("show_mobile_emoji_button", true);
         bool networkReady = game?.ReactionContainer?.InMultiplayer == true;
         bool reactionAvailable = false;
         if (mobileRuntime && settingEnabled && game != null && IsInsideTree())

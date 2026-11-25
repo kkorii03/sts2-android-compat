@@ -64,6 +64,9 @@ internal static class AndroidFontSizeScaler
     internal static void Apply(Node node, float scale)
     {
         if (node is not Control control) return;
+        // Only text controls have font sizes; skip the containers, textures and bars between them.
+        if (control is not (Label or RichTextLabel or BaseButton or LineEdit or TextEdit or ItemList
+            or Tree or TabBar or TabContainer or ProgressBar)) return;
         if (scale != 1f && IsInFixedLayoutScreen(node)) scale = 1f;
         if (control is MegaLabel { AutoSizeEnabled: true } label)
         {

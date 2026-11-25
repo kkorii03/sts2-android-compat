@@ -73,7 +73,11 @@ internal sealed class CombatPositions
             if (room == null || !GodotObject.IsInstanceValid(room) || !room.IsInsideTree())
                 return;
             if (phase == PlayerTurnPhase.Play) // before it: wait, no new snapshot may come when it begins
+            {
                 Send(room);
+                if (!_sentCovered)
+                    CombatStateBridge.Resync(_combat);
+            }
             room.GetTree().CreateTimer(PollSeconds).Timeout += _tick;
         }
         catch (Exception exception)

@@ -150,6 +150,8 @@ public static class CombatStateBridge
                         var snapshot = CombatRecorder.Snapshot("combat", combatState, null, null);
                         if (snapshot == null)
                             return;
+                        _told = _seen = Look(combatState);
+                        _settled = 0;
                         Deliver(Encoding.UTF8.GetString(snapshot));
                         CombatPositions.Start(combatState, generation);
                     }
@@ -164,6 +166,69 @@ public static class CombatStateBridge
             Fail(exception);
         }
     }
+
+    // What was sent last, what it looked like at the last look, and for how many looks it has been like that.
+    private static int _told, _seen, _settled;
+
+    /// What a player sees change: a late effect (a card that comes back, a power, a relic) that no hook above follows.
+    private static int Look(ICombatState combat)
+    {
+        var hash = new HashCode();
+        foreach (var creature in combat.Creatures)
+        {
+            hash.Add(creature.CombatId);
+            hash.Add(creature.CurrentHp);
+            hash.Add(creature.Block);
+            foreach (var power in creature.Powers)
+            {
+                hash.Add(power.Id.Entry);
+                hash.Add(power.Amount);
+            }
+        }
+        foreach (var player in combat.Players)
+            if (player.PlayerCombatState is { } state)
+            {
+                hash.Add(state.TurnNumber);
+                hash.Add(state.Energy);
+                hash.Add(state.Stars);
+                foreach (var card in state.Hand.Cards)
+                    hash.Add(card);
+                hash.Add(state.DrawPile.Cards.Count);
+                hash.Add(state.DiscardPile.Cards.Count);
+                hash.Add(state.ExhaustPile.Cards.Count);
+            }
+        return hash.ToHashCode();
+    }
+
+    /// Called a few times a second in my turn while nothing covers the fight: sends the state again if it has
+    /// changed since and is quiet now.
+    internal static void Resync(ICombatState combat)
+    {
+        if (RunManager.Instance?.ActionExecutor?.IsRunning ?? false)
+        {
+            _settled = 0;
+            return;
+        }
+        var look = Look(combat);
+        if (look == _told || look != _seen)
+        {
+            _seen = look;
+            _settled = 0;
+            return;
+        }
+        if (++_settled < 2)
+            return;
+        _settled = 0;
+        _told = look;
+        var snapshot = CombatRecorder.Snapshot("combat", combat, null, null);
+        if (snapshot != null)
+        {
+            Deliver(Encoding.UTF8.GetString(snapshot));
+            Resent++;
+        }
+    }
+
+    internal static int Resent;
 
     public static void HidePrefix()
     {
